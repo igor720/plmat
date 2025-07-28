@@ -1,0 +1,28 @@
+DataSource:
+    DemArcSec3:
+        nodata: -32767,
+        sea_level: 0,
+        data_source_dir:
+Model:
+    Obj:
+        Common:
+            template_file_obj: "obj.template"
+            template_file_mtl: "mtl.template"
+            output_dir: "./"
+            radius: 6378000.0
+            scale: 50.0
+        Texture:
+            texture_uri: "texture.png"
+        Color:
+            color_profile_file: "color_profile"
+            color_precision: 4
+    X3DGeospatial:
+        Common:
+            template_file_x3d: "geospatial.x3d.template"
+            output_dir: "./"
+        Texture:
+            texture_uri: '"texture.png"'
+        Color:
+            color_profile_file: "color_profile"
+
+

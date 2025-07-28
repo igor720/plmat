@@ -1,0 +1,17 @@
+[package]
+name = "plmat"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+argh = "0.1.13"
+assert_matches = "1.5.0"
+quick-xml = "0.38.0"
+regex = "1.11.1"
+yaml-rust2 = "0.10.3"
+
+[lib]
+crate-type = ["lib"]
+bench = false
+
+[profile.dev]
