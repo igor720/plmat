@@ -76,19 +76,19 @@ pub trait Args {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "x3dgeospatial")]
 pub struct CLIArgsX3DGeospatial {
-    /// model type
+    /// model type (Texture or Color)
     #[argh(positional, from_str_fn(get_model_type))]
     pub model_type: ModelType,
 
-    /// data tiles type
+    /// data source type
     #[argh(positional, from_str_fn(get_data_source_name))]
     pub data_source: DataSourceName,
 
-    /// planet name
+    /// planet name (will be used in output file names)
     #[argh(option, default = "default_planet_name()")]
     pub planet_name: String,
 
-    /// model size (number of points; may be implicitly changed to the nearest valid value)
+    /// model size (may be implicitly changed to the nearest valid value)
     #[argh(option)]
     pub model_size: Option<GeoPointIndex>,
 
@@ -96,11 +96,11 @@ pub struct CLIArgsX3DGeospatial {
     #[argh(option, default = "default_jobs()")]
     pub jobs: usize,
 
-    /// data source path
+    /// data source path (default: current directory)
     #[argh(option)]
     pub data_source_dir: Option<String>,
 
-    /// output path
+    /// output path (default: current directory)
     #[argh(option)]
     pub output_dir: Option<String>,
 }
@@ -133,19 +133,19 @@ impl Args for CLIArgsX3DGeospatial {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "obj")]
 pub struct CLIArgsObj {
-    /// model type
+    /// model type (Texture or Color)
     #[argh(positional, from_str_fn(get_model_type))]
     pub model_type: ModelType,
 
-    /// data tiles type
+    /// data source type
     #[argh(positional, from_str_fn(get_data_source_name))]
     pub data_source: DataSourceName,
 
-    /// planet name
+    /// planet name (will be used in output file names)
     #[argh(option, default = "default_planet_name()")]
     pub planet_name: String,
 
-    /// model size (number of points; will be increased up to valid value)
+    /// model size (may be implicitly changed to the nearest valid value)
     #[argh(option)]
     pub model_size: Option<GeoPointIndex>,
 
@@ -153,11 +153,11 @@ pub struct CLIArgsObj {
     #[argh(option, default = "default_jobs()")]
     pub jobs: usize,
 
-    /// data source path
+    /// data source path (default: current directory)
     #[argh(option)]
     pub data_source_dir: Option<String>,
 
-    /// output path
+    /// output path (default: current directory)
     #[argh(option)]
     pub output_dir: Option<String>,
 }
