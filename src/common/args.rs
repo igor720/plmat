@@ -96,11 +96,11 @@ pub struct CLIArgsX3DGeospatial {
     #[argh(option, default = "default_jobs()")]
     pub jobs: usize,
 
-    /// data source path (default: current directory)
+    /// data source directory (default: current directory)
     #[argh(option)]
     pub data_source_dir: Option<String>,
 
-    /// output path (default: current directory)
+    /// output directory (default: current directory)
     #[argh(option)]
     pub output_dir: Option<String>,
 }
@@ -153,11 +153,11 @@ pub struct CLIArgsObj {
     #[argh(option, default = "default_jobs()")]
     pub jobs: usize,
 
-    /// data source path (default: current directory)
+    /// data source directory (default: current directory)
     #[argh(option)]
     pub data_source_dir: Option<String>,
 
-    /// output path (default: current directory)
+    /// output directory (default: current directory)
     #[argh(option)]
     pub output_dir: Option<String>,
 }

@@ -25,7 +25,8 @@ pub fn get_settings_yaml (filepath: &str) -> Result<Yaml, String> {
             let doc = &docs[0];
             Ok(doc.clone())
         },
-        Err(err) => Err(err)
+        Err(err) =>
+            Err(format!("Can't load settings.yaml from the current directory: {}", err))
     }
 }
 

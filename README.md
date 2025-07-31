@@ -6,23 +6,25 @@ Usage: plmat <model_format> <model_type> <data_source> [--planet-name <planet-na
 
 Positional Arguments:
 
-    model_format      model format (x3dgeospatial or obj)  
-    model_type        model type (Texture or Color)  
-    data_source       data source type (DemArcSec3)  
+    model_format      x3dgeospatial or obj  
+    model_type        texture or color  
+    data_source       DemArcSec3  
 
 Options:
 
     --planet-name     planet name (will be used in output file names)  
     --model-size      model size (may be implicitly changed to the nearest valid value)  
-    --jobs            number of jobs (default: min(2, available parallelism))  
-    --data-source-dir data source path (default: current directory)  
-    --output-dir      output path (default: current directory)  
+    --jobs            number of thread jobs (default: min(2, available parallelism))  
+    --data-source-dir data source directory (default: current directory)  
+    --output-dir      output directory (default: current directory)  
     --help, help      display usage information
 
 ## Settings file
 It's in a YAML format with two root sections: **DataSource** and **Model**.
-**Model** section include settings for two current model formats: **Obj** and **X3DGeospatial**.  
-**Common** section applies to both **Color** and **Texture** model types.
+The **Model** section include settings for two current model formats: **Obj** and **X3DGeospatial**.  
+The **Common** section applies to both **Color** and **Texture** model types.
+
+When launching the app, file settings.yaml must be in the current directory. Command line arguments take precedence over options in settings.yaml.
 
 ## Building and running
 
@@ -37,7 +39,7 @@ or to install with 'release' profile into ~/.cargo/bin/
     cargo install --path ./
     plmat obj color DemArcSec3 --data-source-dir ../hgts --model-size 64
 
-Here command arguments are given for example only.
+Here command arguments are given for example only. 
 
 ## Other
 

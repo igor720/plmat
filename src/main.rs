@@ -3,7 +3,7 @@
 //! The program for 3d models generation (for web, games, and printing).
 //! Uses geospatial data as input.
 
-use std::time::Instant;
+// use std::time::Instant;
 
 mod common;
 mod model;
@@ -47,13 +47,13 @@ fn materialize(tl_commands: &TopLevelCommands) -> Result<(), String> {
 }
 
 fn main() {
-    let now = Instant::now();
+    // let now = Instant::now();
 
     materialize(&argh::from_env())
         .inspect_err(|err| eprintln!("Error: {err}"))
         .unwrap_or(());
 
-    let elapsed = now.elapsed();
-    println!("%%%% Elapsed: {:.2?}", elapsed);
+    // let elapsed = now.elapsed();
+    // println!("%%%% Elapsed: {:.2?}", elapsed);
 }
 
