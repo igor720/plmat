@@ -39,7 +39,7 @@ or to install with 'release' profile into ~/.cargo/bin/
     cargo install --path ./
     plmat obj color DemArcSec3 --data-source-dir ../hgts --model-size 64
 
-Here command arguments are given for example only. 
+Here command line arguments are given for example only. 
 
 ## Other
 
