@@ -41,7 +41,7 @@ or to install with 'release' profile into ~/.cargo/bin/
 
 Here command line arguments are given for example only. 
 
-## Other
+## Help
 
 [Manual on ForgedMaps](https://forgedmaps.com/planet-materializer-manual).
 
