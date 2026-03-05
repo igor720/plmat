@@ -30,8 +30,8 @@ pub struct Obj<'a> {
     modelpoints:        ModelPoints,
     elements:           Elements,
     model_type_data:    ModelTypeData,
-    template_file_mtl:  &'a str,
-    template_file_obj:  &'a str,
+    template_file_mtl:  String,
+    template_file_obj:  String,
     scale:              Height,
     radius:             Height,
     color_precision:    ColorPrecision,
@@ -245,13 +245,13 @@ impl<'a> Model<'a> for Obj<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), String> {
+    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle> {
         let template_file_obj =
-                settings.get_parameter_string("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ)?;
-        check_file(template_file_obj)?;
+                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+        check_file(&template_file_obj)?;
         let template_file_mtl =
-                settings.get_parameter_string("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL)?;
-        check_file(template_file_mtl)
+                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        check_file(&template_file_mtl)
     }
 
     /// Texture model constructor
@@ -262,14 +262,14 @@ impl<'a> Model<'a> for Obj<'a> {
         heights:            Heights,
         modelpoints:        ModelPoints,
         elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, String> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
 
         let template_file_obj =
-                settings.get_parameter_string("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ)?;
+                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
         let template_file_mtl =
-                settings.get_parameter_string("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL)?;
-        let scale = settings.get_parameter_f64("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter_f64("radius", DEFAULT_RADIUS)? as Height;
+                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        let scale = settings.get_parameter("scale", DEFAULT_SCALE)? as Height;
+        let radius = settings.get_parameter("radius", DEFAULT_RADIUS)? as Height;
 
         return Ok(Obj{
             settings,
@@ -293,18 +293,18 @@ impl<'a> Model<'a> for Obj<'a> {
         heights:            Heights,
         modelpoints:        ModelPoints,
         elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, String> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
 
         let template_file_obj =
-                settings.get_parameter_string("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ)?;
-        check_file(template_file_obj)?;
+                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+        check_file(&template_file_obj)?;
         let template_file_mtl =
-                settings.get_parameter_string("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL)?;
-        check_file(template_file_mtl)?;
+                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        check_file(&template_file_mtl)?;
 
-        let scale = settings.get_parameter_f64("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter_f64("radius", DEFAULT_RADIUS)? as Height;
-        let color_precision = settings.get_parameter_i64("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
+        let scale = settings.get_parameter("scale", DEFAULT_SCALE)? as Height;
+        let radius = settings.get_parameter("radius", DEFAULT_RADIUS)? as Height;
+        let color_precision = settings.get_parameter("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
 
         return Ok(Obj{
             settings,
@@ -321,13 +321,13 @@ impl<'a> Model<'a> for Obj<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), ErrHandle> {
         let settings = self.settings;
         let planet_name = settings.planet_name;
-        let output_path = settings.output_dir;
+        let output_path = &settings.output_dir;
 
         // mtl file
-        let create_mtl = || -> Result<(), String> {
+        let create_mtl = || -> Result<(), ErrHandle> {
             let mut data = match &self.model_type_data {
                 ModelTypeData::Color(_) if self.color_precision==0 =>
                     String::with_capacity(2*22 * (self.color_precision+1) as usize * (self.color_precision+1) as usize),
@@ -339,7 +339,7 @@ impl<'a> Model<'a> for Obj<'a> {
                     .with_extension("mtl");
             let mtl_path = match mtl_path_opt.to_str() {
                 Some(fp) => fp,
-                None => return Err(format!("Can't make mtl file with path {} and name {}", &output_path, &planet_name))
+                None => return Err(format!("Can't make mtl file with path {} and name {}", &output_path, &planet_name).into())
             };
             let f_mtl = File::create(&mtl_path)
                 .map_err(|err| {format!("Can't create mtl file {}: {}", &mtl_path, err)})?;
@@ -377,11 +377,11 @@ impl<'a> Model<'a> for Obj<'a> {
                 }
             };
             f_mtl.flush()
-                .map_err(|err| {format!("Can't flush mtl file {}: {}", &mtl_path, err)})
+                .map_err(|err| {format!("Can't flush mtl file {}: {}", &mtl_path, err).into()})
         };
 
         // obj file
-        let create_obj = || -> Result<(), String> {
+        let create_obj = || -> Result<(), ErrHandle> {
             let mut data = match &self.model_type_data {
                 ModelTypeData::Color(_) if self.color_precision==0 =>
                     String::with_capacity((3*(FRACTION_LENGHT+4+6)+1)*WRITER_BUF_STRINGS),
@@ -396,7 +396,7 @@ impl<'a> Model<'a> for Obj<'a> {
                     .with_extension("obj");
             let result_path = match result_path_opt.to_str() {
                 Some(fp) => fp,
-                None => return Err(format!("Can't make obj file with path {} and name {}", &output_path, &planet_name))
+                None => return Err(format!("Can't make obj file with path {} and name {}", &output_path, &planet_name).into())
             };
             let f_obj = File::create(&result_path)
                 .map_err(|err| {format!("Can't create obj file {}: {}", &result_path, err)})?;
@@ -472,7 +472,7 @@ impl<'a> Model<'a> for Obj<'a> {
             data.clear();
             data.push_str("usemtl Material\n");
             let pmap = match &self.modelpoints.points_map_opt {
-                    None => return Err("Critical: Texture Appearance must use points mapping".to_string()),
+                    None => return Err("Critical: Texture Appearance must use points mapping".into()),
                     Some(a) => a
             };
             let allowed_color_func = make_allowed_color_function(self.color_precision);
@@ -481,15 +481,15 @@ impl<'a> Model<'a> for Obj<'a> {
             for (tvt0, tvt1, tvt2) in self.elements.iter() {
                 let vt0 = match pmap.get(tvt0) {
                     Some(vt) => vt,
-                    None => return Err(format!("Point tv0={} isn't found in points mapping", tvt0))
+                    None => return Err(format!("Point tv0={} isn't found in points mapping", tvt0).into())
                 };
                 let vt1 = match pmap.get(tvt1) {
                     Some(vt) => vt,
-                    None => return Err(format!("Point tv1={} isn't found in points mapping", tvt1))
+                    None => return Err(format!("Point tv1={} isn't found in points mapping", tvt1).into())
                 };
                 let vt2 = match pmap.get(tvt2) {
                     Some(vt) => vt,
-                    None => return Err(format!("Point tv2={} isn't found in points mapping", tvt2))
+                    None => return Err(format!("Point tv2={} isn't found in points mapping", tvt2).into())
                 };
 
                 match &self.model_type_data {
@@ -522,7 +522,7 @@ impl<'a> Model<'a> for Obj<'a> {
                 .map_err(|err| {format!("Can't write elements to obj file {}: {}", &result_path, err)})?;
 
             f_obj.flush()
-                .map_err(|err| {format!("Can't flush obj file {}: {}", &result_path, err)})
+                .map_err(|err| {format!("Can't flush obj file {}: {}", &result_path, err).into()})
         };
 
         create_mtl()?;

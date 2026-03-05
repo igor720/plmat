@@ -24,7 +24,7 @@ pub struct X3DGeospatial<'a> {
     spacing:            Coord,
     heights:            Heights,
     model_type_data:    ModelTypeData,
-    template_file:      &'a str,
+    template_file:      String,
 }
 
 impl<'a> Model<'a> for X3DGeospatial<'a> {
@@ -60,10 +60,11 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), String> {
-        let template_file =
-                settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
-        check_file(template_file)
+    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle> {
+        let template_file: String =
+                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+                // settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
+        check_file(&template_file)
     }
 
     /// Texture model constructor
@@ -74,10 +75,11 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         heights:            Heights,
         _:                  ModelPoints,
         _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, String> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
 
-        let template_file =
-                settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
+        let template_file: String =
+                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+                // settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
 
         return Ok(X3DGeospatial{
             settings,
@@ -97,11 +99,11 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         heights:            Heights,
         _:                  ModelPoints,
         _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, String> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
 
         let template_file =
-                settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
-        check_file(template_file)?;
+                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+        check_file(&template_file)?;
 
         return Ok(X3DGeospatial{
             settings,
@@ -114,14 +116,14 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), ErrHandle> {
         let settings = self.settings;
         let planet_name = settings.planet_name;
-        let output_path = settings.output_dir;
+        let output_path = &settings.output_dir;
 
-        let mut reader = match Reader::from_file(self.template_file) {
+        let mut reader = match Reader::from_file(&self.template_file) {
             Ok(r) => r,
-            Err(err) => return Err(format!("Can't read template: {}", err))
+            Err(err) => return Err(format!("Can't read template: {}", err).into())
         };
         reader.config_mut().check_comments = true;
 
@@ -132,12 +134,12 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                 .with_extension("x3d");
         let result_path = match _result_path.to_str() {
             Some(fp) => fp,
-            None => return Err(format!("Can't get file path for result data"))
+            None => return Err("Can't get file path for result data".into())
         };
 
         let buffer = match File::create(result_path) {
             Ok(f) => f,
-            Err(err) => return Err(format!("Can't write to output file: {}", err))
+            Err(err) => return Err(format!("Can't write to output file: {}", err).into())
         };
 
         let height_values =
@@ -168,7 +170,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         let mut in_geo_elevation_grid = false;
         loop {
             match reader.read_event_into(&mut buf) {
-                Err(e) => return Err(format!("Error at position {}: {:?}", reader.error_position(), e)),
+                Err(e) => return Err(format!("Error at position {}: {:?}", reader.error_position(), e).into()),
                 Ok(Event::Eof) => break,
                 Ok(Event::Empty(e))
                         if e.name().as_ref() == b"_GeoElevationGrid" => {
@@ -213,11 +215,11 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                 Ok(Event::Empty(e))
                     if e.name().as_ref() == b"_ImageTexture" => {
                         let texture_uri =
-                                settings.get_parameter_string("texture_uri", DEFAULT_TEXTURE_URI)?;
+                                settings.get_parameter("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
                         let mut elem = BytesStart::new("ImageTexture");
                         match &self.model_type_data {
                             ModelTypeData::Texture(_) =>
-                                elem.push_attribute(("url", texture_uri)),
+                                elem.push_attribute(("url", &texture_uri[..])),
                             ModelTypeData::Color(_) => (),
                         };
 
@@ -228,7 +230,8 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
             buf.clear();
         }
 
-        writer.into_inner().flush().map_err(|err| {err.to_string()})
+        // writer.into_inner().flush().map_err(|err| {err.to_string()})
+        Ok(writer.into_inner().flush()?)
     }
 
 }

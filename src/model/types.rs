@@ -58,7 +58,7 @@ pub fn make_data_source_opts(nodata: Option<HeightInt>, sea_level: Option<Height
 
 /// Loads specific data source tile data
 pub fn load_tile_data<'a>(data_source_path: &str, data_source_name: &DataSourceName, opts: &'a dyn DataSourceOpts,
-        tile_id: &'a TileID) -> Result<Option<impl (TileData<'a>)>, String> {
+        tile_id: &'a TileID) -> Result<Option<impl TileData<'a>>, String> {
 
     match data_source_name {
         DataSourceName::DemArcSec3 =>
@@ -103,7 +103,7 @@ pub trait Model<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), String>;
+    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle>;
 
     /// Creates texture model from model data
     fn build_texture_model(
@@ -113,7 +113,7 @@ pub trait Model<'a> {
         heights:                Heights,
         modelpoints:            ModelPoints,
         elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, String> where Self:Sized;
+        model_type_data:        ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized;
 
     /// Creates color model from model data
     fn build_color_model(
@@ -123,10 +123,10 @@ pub trait Model<'a> {
         heights:                Heights,
         modelpoints:            ModelPoints,
         elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, String> where Self:Sized;
+        model_type_data:        ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized;
 
     /// Creates model for texture model type
-    fn create_with_texture(settings: &'a Settings) -> Result<Self, String> where Self:Sized {
+    fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrHandle> where Self:Sized {
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -187,7 +187,7 @@ pub trait Model<'a> {
     }
 
     /// Creates model for color model type
-    fn create_with_color(settings: &'a Settings) -> Result<Self, String> where Self:Sized {
+    fn create_with_color(settings: &'a Settings) -> Result<Self, ErrHandle> where Self:Sized {
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -204,12 +204,13 @@ pub trait Model<'a> {
         }
 
         let color_profile_file =
-                settings.get_parameter_string("color_profile_file", DEFAULT_COLOR_PROFILE_FILE)?;
+                settings.get_parameter("color_profile_file", DEFAULT_COLOR_PROFILE_FILE.to_string())?;
+                // settings.get_parameter_string("color_profile_file", DEFAULT_COLOR_PROFILE_FILE)?;
 
         let color_mapping =
                 match get_color_mapping(&color_profile_file) {
                     Err(err) =>
-                        return Err(format!("Can't find color profile file '{}': {}", &color_profile_file, err)),
+                        return Err(format!("Can't find color profile file '{}': {}", &color_profile_file, err).into()),
                     Ok(func) => func
                 };
 
@@ -270,6 +271,6 @@ pub trait Model<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), String>;
+    fn save(&self) -> Result<(), ErrHandle>;
 }
 

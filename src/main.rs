@@ -14,11 +14,12 @@ use common::settings::*;
 use model::types::*;
 use model::x3dgeospatial::*;
 use model::obj::*;
+use crate::common::types::*;
 use crate::MySubCommandEnum::*;
 
 
 /// Does everything that is needed to make a 3d model
-fn materialize(tl_commands: &TopLevelCommands) -> Result<(), String> {
+fn materialize(tl_commands: &TopLevelCommands) -> Result<(), ErrHandle> {
     let settings_yaml = get_settings_yaml("./settings.yaml")?;
     let settings = Settings::make_settings(&tl_commands, &settings_yaml)?;
 
@@ -46,7 +47,7 @@ fn materialize(tl_commands: &TopLevelCommands) -> Result<(), String> {
     }
 }
 
-fn main() {
+fn main() -> Result<(), ErrHandle> {
     // let now = Instant::now();
 
     materialize(&argh::from_env())
@@ -55,5 +56,6 @@ fn main() {
 
     // let elapsed = now.elapsed();
     // println!("%%%% Elapsed: {:.2?}", elapsed);
+    Ok(())
 }
 

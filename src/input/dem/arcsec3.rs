@@ -160,7 +160,7 @@ mod tests {
     const DEM_ARRAY_SIZE:usize = DEM_EDGE_SIZE*DEM_EDGE_SIZE;
 
     #[test]
-    fn calc_height_t0() -> Result<(), String> {
+    fn calc_height_t0() -> Result<(), ErrHandle> {
         let mut dem_data = vec![1; DEM_ARRAY_SIZE].into_boxed_slice();
         dem_data[DEM_ARRAY_SIZE/2] = 100;
         dem_data[DEM_ARRAY_SIZE/2+1] = 0;
@@ -182,7 +182,7 @@ mod tests {
         if (height-100.0).abs() < 0.00001 {
             Ok(())
         } else {
-            Err(format!("invalid height result: {}", height))
+            Err(format!("invalid height result: {}", height).into())
         }
     }
 }

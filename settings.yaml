@@ -12,7 +12,7 @@ Model:
             radius: 6378000.0
             scale: 50.0
         Texture:
-            texture_uri: "texture.png"
+            texture_uri: "image-equi-hs-b-1.png"
         Color:
             color_profile_file: "color_profile"
             color_precision: 4
@@ -21,7 +21,7 @@ Model:
             template_file_x3d: "geospatial.x3d.template"
             output_dir: "./"
         Texture:
-            texture_uri: '"texture.png"'
+            texture_uri: '"image-equi-hs-b-1.png"'
         Color:
             color_profile_file: "color_profile"
 
