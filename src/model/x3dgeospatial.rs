@@ -118,7 +118,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     /// Saves model data to resulting files
     fn save(&self) -> Result<(), ErrHandle> {
         let settings = self.settings;
-        let planet_name = settings.planet_name;
+        let planet_name = &settings.planet_name;
         let output_path = &settings.output_dir;
 
         let mut reader = match Reader::from_file(&self.template_file) {

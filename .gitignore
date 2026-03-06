@@ -22,3 +22,5 @@ target
 
 Makefile
 *.code-workspace
+
+.continue

@@ -18,33 +18,15 @@ const DEFAULT_DATA_SOURCE_DIR: &str = "./";
 const DEFAULT_OUTPUT_DIR: &str = "./";
 
 
-/// Reads the settings file from the specified filepath
-fn read_settings_file(filepath: &str) -> Result<String, ErrHandle> {
-    Ok(read_to_string(filepath)?)
-}
-
-/// Reads and parses the settings YAML file
-pub fn get_settings_yaml (filepath: &str) -> Result<Yaml, ErrHandle> {
-    match read_settings_file(filepath) {
-        Ok(s) => {
-            let docs = YamlLoader::load_from_str(&s)
-                .map_err(|err| {format!("Malformed YAML settings file: {}", err)})?;
-            let doc = &docs[0];
-            Ok(doc.clone())
-        },
-        Err(err) =>
-            Err(format!("Can't read YAML settings file from the current directory: {}", err).into())
-    }
-}
-
 /// Main settings structure for the application
 /// 
 /// This structure holds all the configuration parameters needed for processing
 /// geographic data and generating 3D models. It includes both global settings
 /// and model-specific configurations.
+#[derive(Debug)]
 pub struct Settings<'a> {
     /// Name of the planet being processed
-    pub planet_name: &'a str,
+    pub planet_name: String,
     /// Size of the model in terms of geopoints
     pub model_size: Option<GeoPointIndex>,
     /// Number of parallel jobs to run during processing
@@ -59,16 +41,37 @@ pub struct Settings<'a> {
     pub nodata: Option<HeightInt>,
     /// Default sea level for the model
     pub sea_level: Option<HeightInt>,
-    /// Tuple containing common and specific settings for the model
-    pub specific: (&'a Yaml, &'a Yaml)
+    /// Common settings for the model
+    pub common: &'a Yaml,
+    /// Specific settings for the model
+    pub specific: &'a Yaml,
 }
 
 impl<'a> Settings<'a> {
+    /// Reads the settings file from the specified filepath
+    fn read_settings_file(filepath: &str) -> Result<String, ErrHandle> {
+        Ok(read_to_string(filepath)?)
+    }
+
+    /// Reads and parses the settings YAML file
+    pub fn get_settings_yaml (filepath: &str) -> Result<Yaml, ErrHandle> {
+        match Settings::read_settings_file(filepath) {
+            Ok(s) => {
+                match YamlLoader::load_from_str(&s) {
+                    Ok(docs) => Ok(docs[0].clone()),
+                    Err(err) => Err(format!("Malformed YAML settings file: {}", err).into()),
+                }
+            },
+            Err(err) =>
+                Err(format!("Can't read YAML settings file: {}", err).into())
+        }
+    }
+
     /// Creates a Settings instance from command line arguments and configuration YAML
     pub fn make_settings (tl_commands: &'a TopLevelCommands, settings: &'a Yaml) -> Result<Self, ErrHandle> {
-        let make = |args: &'a dyn Args, model_name: &str| {
+        let make_for_model_name = |args: &'a dyn Args, model_name: &str| {
             let data_source = args.data_source();
-            let planet_name = args.planet_name().as_str();
+            let planet_name = args.planet_name().clone();
             let model_size = args.model_size();
             let jobs = args.jobs();
 
@@ -124,21 +127,23 @@ impl<'a> Settings<'a> {
                 output_dir,
                 nodata,
                 sea_level,
-                specific: (&y0, &y1),
+                common: &y0,
+                specific: &y1,
             })
         };
 
         match &tl_commands.inner_enum {
             SubCommandX3DGeospatial(args) =>
-                make(args, "X3DGeospatial"),
+                make_for_model_name(args, "X3DGeospatial"),
             SubCommandObj(args) =>
-                make(args, "Obj"),
+                make_for_model_name(args, "Obj"),
         }
     }
 
     /// Returns parameter value as Yaml struct
-    fn get_parameter_value(&'a self, parameter: &str) -> Result<&'a Yaml, ErrHandle> {
-        let (y0, y1) = self.specific;
+    fn get_parameter_yaml(&'a self, parameter: &str) -> Result<&'a Yaml, ErrHandle> {
+        let y0 = self.common;
+        let y1 = self.specific;
         if y1[parameter].is_badvalue() {
             if y0[parameter].is_badvalue() {
                 return Err(format!("Parameter '{}' can't be found in settings file", parameter).into())
@@ -152,50 +157,94 @@ impl<'a> Settings<'a> {
 
     /// Returns parameter value
     pub fn get_parameter<T: FromStr>(&'a self, parameter: &str, default: T) -> Result<T, ErrHandle> {
-        self.get_parameter_value(parameter)
+        self.get_parameter_yaml(parameter)
         .map_or_else(
             |_| {Some(default)},
             |y| {
-                // y.as_str()
-                // .unwrap_or("")
-                // .parse::<&T>()
-                // .ok()
                 y.as_str()
                 .unwrap_or("")
                 .parse::<T>()
                 .ok()
             }
             )
-        .ok_or_else(|| {format!("invalid '{}' parameter in the settings file", parameter).into()})
+        .ok_or_else(|| {format!("Invalid '{}' parameter in the settings file", parameter).into()})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_read_settings_file() {
+        let filepath = "tests/fixtures/valid_settings.yaml";
+        assert!(Settings::read_settings_file(filepath).is_ok());
     }
 
-    // /// Returns string parameter value
-    // pub fn get_parameter_string(&'a self, parameter: &str, default: &'a str) -> Result<&'a str, ErrHandle> {
-    //     self.get_parameter_value(parameter)
-    //     .map_or_else(
-    //         |_| {Some(default)},
-    //         |y| {y.as_str()},
-    //         )
-    //     .ok_or_else(|| {format!("invalid '{}' parameter in the settings file", parameter).into()})
-    // }
+    #[test]
+    fn test_get_settings_yaml() {
+        let filepath = "tests/fixtures/valid_settings.yaml";
+        assert!(Settings::get_settings_yaml(filepath).is_ok());
+    }
 
-    // /// Returns i64 parameter value
-    // pub fn get_parameter_i64(&self, parameter: &str, default: i64) -> Result<i64, ErrHandle> {
-    //     self.get_parameter_value(parameter)
-    //     .map_or_else(
-    //         |_| {Some(default)},
-    //         |y| {y.as_i64()},
-    //         )
-    //     .ok_or_else(|| {format!("invalid '{}' parameter in the settings file", parameter).into()})
-    // }
+    #[test]
+    fn test_make_settings() {
+        // Assuming you have a valid settings.yaml file and top-level commands setup for testing
+        let filepath = "tests/fixtures/valid_settings.yaml";
+        let content = fs::read_to_string(filepath).expect("Failed to read file");
+        let yaml = YamlLoader::load_from_str(&content).unwrap()[0].clone();
+        // You need to set up a TopLevelCommands and Yaml for this test
+        let args = CLIArgsX3DGeospatial {
+            model_type: ModelType::TextureModelType,
+            data_source: DataSourceName::DemArcSec3,
+            planet_name: "test-planet".to_string(),
+            model_size: Some(8),
+            jobs: 2,
+            data_source_dir: Some("./".to_string()),
+            output_dir: Some("./".to_string()),
+        };
+        let tl_command = TopLevelCommands { inner_enum: SubCommandX3DGeospatial(args) };
+        assert!(Settings::make_settings(&tl_command, &yaml).is_ok());
+    }
 
-    // /// Returns f64 parameter value
-    // pub fn get_parameter_f64(&self, parameter: &str, default: f64) -> Result<f64, ErrHandle> {
-    //     self.get_parameter_value(parameter)
-    //     .map_or_else(
-    //         |_| {Some(default)},
-    //         |y| {y.as_f64()},
-    //         )
-    //     .ok_or_else(|| {format!("invalid '{}' parameter in the settings file", parameter).into()})
-    // }
+    #[test]
+    fn test_get_parameter() {
+        let filepath = "tests/fixtures/valid_settings.yaml";
+        let content = fs::read_to_string(filepath).expect("Failed to read file");
+        let yaml = YamlLoader::load_from_str(&content).unwrap();
+        let settings = Settings {
+            planet_name: "Earth".to_string(),
+            model_size: None,
+            jobs: 4,
+            data_source: DataSourceName::DemArcSec3,
+            data_source_dir: DEFAULT_DATA_SOURCE_DIR.to_string(),
+            output_dir: DEFAULT_OUTPUT_DIR.to_string(),
+            nodata: None,
+            sea_level: None,
+            common: &yaml[0],
+            specific: &yaml[0]["Model"]["X3DGeospatial"],
+        };
+        assert_eq!(settings.get_parameter("jobs", 4).unwrap(), 4);
+    }
+
+    #[test]
+    fn test_get_parameter_default() {
+        let filepath = "tests/fixtures/valid_settings.yaml";
+        let content = fs::read_to_string(filepath).expect("Failed to read file");
+        let yaml = YamlLoader::load_from_str(&content).unwrap();
+        let settings = Settings {
+            planet_name: "Earth".to_string(),
+            model_size: None,
+            jobs: 4,
+            data_source: DataSourceName::DemArcSec3,
+            data_source_dir: DEFAULT_DATA_SOURCE_DIR.to_string(),
+            output_dir: DEFAULT_OUTPUT_DIR.to_string(),
+            nodata: None,
+            sea_level: None,
+            common: &yaml[0],
+            specific: &yaml[0]["Model"]["X3DGeospatial"],
+        };
+        assert_eq!(settings.get_parameter("unknown_param", 123).unwrap(), 123);
+    }
 }
