@@ -138,23 +138,23 @@ fn build_color_mapping(color_table: &Vec<ColorRecord>) -> Result<ColorMappning, 
 }
 
 /// Returns function to mapping values of HeightInt type to RGB values
-pub fn get_color_mapping(filepath: &str) -> Result<impl Fn(HeightInt) -> RGB, ErrHandle> {
+pub fn get_color_mapping<'a>(filepath: &'a str) -> Result<impl Fn(HeightInt) -> RGB, ErrHandle> {
     let file_content = read_lines(&filepath)?;
     let color_table = build_color_table(file_content)?;
 
-    let ColorRecord (h0, r0, g0, b0) = color_table.first()
-            .ok_or_else(|| -> ErrHandle { "Can't get first element in color table".into() })?;
-    let ColorRecord (h1, r1, g1, b1) = color_table.last()
-            .ok_or_else(|| -> ErrHandle { "Can't get last element in color table".into() })?;
-
     let color_mapping = build_color_mapping(&color_table)?;
+
+    let ColorRecord (h0, r0, g0, b0) = color_table.first()
+            .ok_or_else(|| -> ErrHandle { "Can't get first element in color table".into() })?.clone();
+    let ColorRecord (h1, r1, g1, b1) = color_table.last()
+            .ok_or_else(|| -> ErrHandle { "Can't get last element in color table".into() })?.clone();
 
     Ok(move |h| {
         match color_mapping.get(&h) {
             Some(c) => *c,
             None =>
-                if h<*h0 {RGB (*r0, *g0, *b0).clone()}
-                else if h>*h1 {RGB (*r1, *g1, *b1).clone()}
+                if h<h0 {RGB (r0, g0, b0).clone()}
+                else if h>h1 {RGB (r1, g1, b1).clone()}
                 else {panic!("Missing color for elevation {}", h)}
         }
     })
