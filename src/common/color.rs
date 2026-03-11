@@ -25,22 +25,6 @@
 //! - RGB components are floating-point values between 0.0 and 1.0
 //! 
 //! Lines starting with '#' are treated as comments and ignored.
-//! 
-//! # Examples
-//! 
-//! ```rust
-//! use crate::common::color::{get_color_mapping, make_allowed_color_function, RGB};
-//! 
-//! // Create a color mapping function from a profile file
-//! let color_func = get_color_mapping("color_profile.txt").unwrap();
-//! 
-//! // Get color for elevation 1000
-//! let color = color_func(1000).unwrap();
-//! 
-//! // Quantize a color to a palette
-//! let allowed_func = make_allowed_color_function(8);
-//! let (allowed_color, position) = allowed_func(color);
-//! ```
 use std::fmt;
 use std::fs::read_to_string;
 use std::collections::HashMap;
