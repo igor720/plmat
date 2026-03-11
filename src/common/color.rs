@@ -1,3 +1,46 @@
+//! Color handling utilities for elevation mapping
+//! 
+//! This module provides functionality for working with RGB colors in the context of
+//! elevation mapping. It includes:
+//! 
+//! - RGB color representation with formatting
+//! - Color interpolation from elevation profiles
+//! - Color quantization and palette management
+//! - Parsing of color profile files
+//! 
+//! The module is designed to map elevation values to colors for visualization purposes,
+//! where different elevation ranges are assigned specific RGB colors.
+//! 
+//! # Color Profile Files
+//! 
+//! Color profile files define the mapping between elevation values and RGB colors.
+//! Each line in the file should contain:
+//! 
+//! ```text
+//! <elevation> <red> <green> <blue>
+//! ```
+//! 
+//! Where:
+//! - Elevation is a non-negative integer
+//! - RGB components are floating-point values between 0.0 and 1.0
+//! 
+//! Lines starting with '#' are treated as comments and ignored.
+//! 
+//! # Examples
+//! 
+//! ```rust
+//! use crate::common::color::{get_color_mapping, make_allowed_color_function, RGB};
+//! 
+//! // Create a color mapping function from a profile file
+//! let color_func = get_color_mapping("color_profile.txt").unwrap();
+//! 
+//! // Get color for elevation 1000
+//! let color = color_func(1000).unwrap();
+//! 
+//! // Quantize a color to a palette
+//! let allowed_func = make_allowed_color_function(8);
+//! let (allowed_color, position) = allowed_func(color);
+//! ```
 use std::fmt;
 use std::fs::read_to_string;
 use std::collections::HashMap;
@@ -9,11 +52,21 @@ use crate::common::types::*;
 const DEFAULT_COLOR: RGB = RGB (0.5, 0.5, 0.5);
 
 
-/// Color componenent
+/// Color component type for RGB values
+/// 
+/// Represents a single color component (red, green, or blue) with floating-point precision.
+/// Values should be in the range [0.0, 1.0].
 pub type ColorComponent = f32;
 
+/// RGB Color structure
+/// 
+/// Represents a color in the RGB color space with three components:
+/// - Red (0.0 to 1.0)
+/// - Green (0.0 to 1.0)  
+/// - Blue (0.0 to 1.0)
+/// 
+/// Implements Display trait for formatted string output.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// RGB Color
 pub struct RGB (pub ColorComponent, pub ColorComponent, pub ColorComponent);
 
 impl fmt::Display for RGB {
@@ -26,20 +79,38 @@ impl fmt::Display for RGB {
     }
 }
 
-/// Integer precision for defining colors
+/// Integer precision type for defining colors
+/// 
+/// Used to specify the precision level for color quantization, typically
+/// representing the number of discrete color levels in each RGB component.
 pub type ColorPrecision = u16;
 
-/// Color specification with three numbers defining positions in rgb color intervals
+/// Color position type
+/// 
+/// Represents a color position as three discrete values (r, g, b) that define
+/// a position in the RGB color space. Each component is a ColorPrecision value.
 pub type ColorPosition = (ColorPrecision, ColorPrecision, ColorPrecision);
 
 /// Elevation to RGB Color mapping
+/// 
+/// A HashMap that maps elevation values (HeightInt) to RGB colors.
+/// Used to determine what color should be displayed for a given elevation.
 pub type ColorMappning = HashMap<HeightInt, RGB>;
 
-/// Color profile file content
+/// Color profile file content type
+/// 
+/// Represents the content of a color profile file as a vector of strings,
+/// where each string corresponds to a line in the file.
 type ColorProfileFileContent = Vec<String>;
 
+/// Color profile record
+/// 
+/// Represents a single record in a color profile file containing:
+/// - HeightInt: Elevation value
+/// - ColorComponent: Red component value (0.0 to 1.0)
+/// - ColorComponent: Green component value (0.0 to 1.0)
+/// - ColorComponent: Blue component value (0.0 to 1.0)
 #[derive(Debug, Clone, PartialEq)]
-/// Color profile record (element of color table)
 struct ColorRecord (
     pub HeightInt,
     pub ColorComponent,
@@ -47,14 +118,20 @@ struct ColorRecord (
     pub ColorComponent,
 );
 
-/// Read color profile file
+/// Read color profile file lines into a vector
+/// 
+/// Reads the entire content of a color profile file and splits it into lines.
 fn read_lines(filepath: &str) -> Result<ColorProfileFileContent, ErrBox> {
     read_to_string(filepath)
         .map(|str| {str.lines().map(String::from).collect()})
         .map_err(|err| {err.into()})
 }
 
-/// Build color table
+/// Build color table from file content
+/// 
+/// Parses color profile file content into a structured color table.
+/// Each line should contain: height red green blue values separated by whitespace.
+/// Lines starting with '#' are treated as comments and ignored.
 fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorRecord>, ErrBox> {
     let re_line_ = Regex::new(r"^\s*(\d+)\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s*$");
     let re_line = match re_line_ {
@@ -111,7 +188,11 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
     }
 }
 
-/// Builds color mapping data (HeightInt -> RGB)
+/// Build color mapping from color table
+/// 
+/// Creates a mapping from elevation values to RGB colors by interpolating
+/// between color records in the table. For heights between records, linear
+/// interpolation is used to determine the color.
 fn build_color_mapping(color_table: &Vec<ColorRecord>) -> Result<ColorMappning, ErrBox> {
     let mut color_mapping = HashMap::new();
 
@@ -142,7 +223,10 @@ fn build_color_mapping(color_table: &Vec<ColorRecord>) -> Result<ColorMappning, 
     return Ok(color_mapping);
 }
 
-/// Returns function to mapping values of HeightInt type to RGB values
+/// Get color mapping function from color profile file
+/// 
+/// Creates a closure that maps elevation values to RGB colors by reading
+/// a color profile file and building an interpolation mapping.
 pub fn get_color_mapping<'a>(filepath: &'a str) -> Result<impl Fn(HeightInt) -> Result<RGB, ErrBox>, ErrBox> {
     let file_content = read_lines(&filepath)?;
     let color_table = build_color_table(file_content)?;
@@ -167,7 +251,11 @@ pub fn get_color_mapping<'a>(filepath: &'a str) -> Result<impl Fn(HeightInt) -> 
     })
 }
 
-/// Returns function which makes allowed color from arbitrary color
+/// Create function to make allowed color from arbitrary color
+/// 
+/// Creates a closure that quantizes an RGB color to the nearest allowed color
+/// based on the specified precision level. This is useful for color palette
+/// restrictions or reducing color depth.
 pub fn make_allowed_color_function(prec: ColorPrecision) -> impl Fn(RGB)-> (RGB, ColorPosition) {
     let interval = 1.0/(prec as ColorComponent);
     move |color| {
@@ -188,12 +276,18 @@ pub fn make_allowed_color_function(prec: ColorPrecision) -> impl Fn(RGB)-> (RGB,
     }
 }
 
-/// Calculates interval within rgb intervals which separates individual color component values
+/// Calculate color interval for given precision
+/// 
+/// Computes the interval size between discrete color values for a given precision.
+/// This represents the step size in the color space for each component.
 pub fn get_color_interval(prec: ColorPrecision) -> ColorComponent {
     1.0/(prec as ColorComponent)
 }
 
-/// Restores rgb color from components
+/// Restore RGB color from discrete components
+/// 
+/// Creates an RGB color from discrete color position components and interval size.
+/// This is the inverse operation of quantization.
 pub fn make_rgb_color(interval: ColorComponent, r_k: ColorPrecision, g_k: ColorPrecision, b_k: ColorPrecision) -> RGB {
     RGB (r_k as ColorComponent * interval,
         g_k as ColorComponent * interval,
