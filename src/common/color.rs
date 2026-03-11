@@ -56,10 +56,17 @@ fn read_lines(filepath: &str) -> Result<ColorProfileFileContent, ErrBox> {
 
 /// Build color table
 fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorRecord>, ErrBox> {
-    let re_ = Regex::new(r"^(\d+)\s+([01](?:\.\d+)?|(?:\.\d+))\s+([01](?:\.\d+)?|(?:\.\d+))\s+([01](?:\.\d+)?|(?:\.\d+))\s*$");
-    let re = match re_ {
+    let re_line_ = Regex::new(r"^\s*(\d+)\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s*$");
+    let re_line = match re_line_ {
         Ok(re_) => re_,
-        Err(_) => return Err("Invalid color profile file format".into()),
+        Err(_) => return Err("RegExp error".into()),
+
+    };  
+    let re_comment_ = Regex::new(r"^#.*");
+    let re_comment = match re_comment_ {
+        Ok(re_) => re_,
+        Err(_) => return Err("RegExp error".into()),
+
     };  
     let mut l: usize = 0;
     let mut prev_h: HeightInt = -32767;
@@ -67,7 +74,7 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
     let mut color_table = vec![];
     for line in file_content {
         l += 1;
-        match re.captures(&line) {
+        match re_line.captures(&line) {
             Some(caps) => {
                 let h = caps[1].parse::<HeightInt>()
                     .map_err(|err| -> ErrBox {format!("Can't parse height value at line {}: {}", l, err).into()})?;
@@ -78,16 +85,6 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
                 let b = caps[4].parse::<ColorComponent>()
                     .map_err(|err| -> ErrBox {format!("Can't parse Blue component at line {}: {}", l, err).into()})?;
 
-                if r>1.0 || r<0.0 {
-                    return Err(format!("Invalid number in second column of line {} in color profile", l).into());
-                }
-                if g>1.0 || g<0.0 {
-                    return Err(format!("Invalid number in third column of line {} in color profile", l).into());
-                }
-                if b>1.0 || b<0.0 {
-                    return Err(format!("Invalid number in fourth column of line {} in color profile", l).into());
-                }
-
                 if h<=prev_h {
                     return Err(format!("Heights in color profile must be strictly incremental").into());
                 }
@@ -95,7 +92,15 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
 
                 color_table.push(ColorRecord (h, r, g, b));
             }
-            None => {}
+            None => {
+                match re_comment.captures(&line) {
+                    Some(_) => {
+                    },
+                    None => {
+                        return Err(format!("Invalid line {} in color profile", l).into());
+                    },
+                }
+            }
         }
     }
 
@@ -145,16 +150,18 @@ pub fn get_color_mapping<'a>(filepath: &'a str) -> Result<impl Fn(HeightInt) -> 
     let color_mapping = build_color_mapping(&color_table)?;
 
     let ColorRecord (h0, r0, g0, b0) = color_table.first()
-            .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?.clone();
+            .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?
+            .clone();
     let ColorRecord (h1, r1, g1, b1) = color_table.last()
-            .ok_or_else(|| -> ErrBox { "Can't get last element in color table".into() })?.clone();
+            .ok_or_else(|| -> ErrBox { "Can't get last element in color table".into() })?
+            .clone();
 
     Ok(move |h| {
         match color_mapping.get(&h) {
             Some(c) => Ok(*c),
             None =>
-                if h<h0 { Ok(RGB (r0, g0, b0).clone()) }
-                else if h>h1 { Ok(RGB (r1, g1, b1).clone()) }
+                if h<h0 { Ok(RGB (r0, g0, b0)) }
+                else if h>h1 { Ok(RGB (r1, g1, b1)) }
                 else { Err(format!("Missing color for elevation {}", h).into()) }
         }
     })
@@ -232,17 +239,18 @@ mod tests {
     #[test]
     fn build_color_table_t1() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
-            String::from("1500    0.5     0.5     0  "),
-            String::from(" 4000    0.6     0.4     0.1"),
-            String::from("8000    0.8     0.2     0  "),
+            String::from("0    0.5     0.5     0  "),
+            String::from(" 1   0.6     0.4     0.1"),
+            String::from("2    0.8     0.2     0  "),
         ];
 
         match build_color_table(file_content) {
             Err(err) => Err(err),
             Ok(color_table) => {
                 let color_table0 = vec![
-                    ColorRecord (1500, 0.5, 0.5, 0.0),
-                    ColorRecord (8000, 0.8, 0.2, 0.0),
+                    ColorRecord (0, 0.5, 0.5, 0.0),
+                    ColorRecord (1, 0.6, 0.4, 0.1),
+                    ColorRecord (2, 0.8, 0.2, 0.0),
                 ];
                 if color_table==color_table0 {
                     Ok(())
@@ -256,9 +264,9 @@ mod tests {
     #[test]
     fn build_color_table_t2() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
-            String::from("0       0       0       0.7"),
-            String::from("#1       0       0.7     0  "),
-            String::from("500     0.5     0.7     0  "),
+            String::from("0       0.0       0       0.7"),
+            String::from("#1      1.0       0.7     0  "),
+            String::from("3       .333      0.7     0  "),
         ];
 
         match build_color_table(file_content) {
@@ -266,7 +274,7 @@ mod tests {
             Ok(color_table) => {
                 let color_table0 = vec![
                     ColorRecord (0, 0.0, 0.0, 0.7),
-                    ColorRecord (500, 0.5, 0.7, 0.0),
+                    ColorRecord (3, 0.333, 0.7, 0.0),
                 ];
                 if color_table==color_table0 {
                     Ok(())
@@ -335,7 +343,7 @@ mod tests {
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err.to_string()==format!("Invalid number in second column of line {} in color profile", 2) {
+                if err.to_string()==format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
                     Err(format!("Got: {}", err).into())
@@ -349,14 +357,14 @@ mod tests {
     fn build_color_table_t6() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
-            String::from("500     0.5     2.7     0  "),
+            String::from("500     0.5     -0.7    0  "),
             String::from("1500    0.5     0.5     0  "),
             String::from("4000    0.6     0.4     0.1"),
         ];
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err.to_string()==format!("Invalid number in third column of line {} in color profile", 2) {
+                if err.to_string()==format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
                     Err(format!("Got: {}", err).into())
@@ -377,7 +385,7 @@ mod tests {
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err.to_string()==format!("Invalid number in fourth column of line {} in color profile", 2) {
+                if err.to_string()==format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
                     Err(format!("Got: {}", err).into())
@@ -390,29 +398,17 @@ mod tests {
     #[test]
     fn build_color_table_t8() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
-            String::from("0       0       0       0.7"),
-            String::from("500     0.5     0.7     0  "),
-            String::from("1000    0.5     0.5     0  "),
-            String::from("1500    0.5     0.5     0  "),
         ];
 
         match build_color_table(file_content) {
             Err(err) => {
-                Err(err)
-            },
-            Ok(color_table) => {
-                let color_table0 = vec![
-                    ColorRecord (0, 0.0, 0.0, 0.7),
-                    ColorRecord (500, 0.5, 0.7, 0.0),
-                    ColorRecord (1000, 0.5, 0.5, 0.0),
-                    ColorRecord (1500, 0.5, 0.5, 0.0),
-                ];
-                if color_table==color_table0 {
+                if err.to_string()==format!("Color table is empty") {
                     Ok(())
                 } else {
-                    Err(format!("wrong color_table: {:?}", color_table).into())
+                    Err(format!("Got: {}", err).into())
                 }
-            }
+            },
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table).into())
         }
     }
 
