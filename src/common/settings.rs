@@ -49,12 +49,12 @@ pub struct Settings<'a> {
 
 impl<'a> Settings<'a> {
     /// Reads the settings file from the specified filepath
-    fn read_settings_file(filepath: &str) -> Result<String, ErrHandle> {
+    fn read_settings_file(filepath: &str) -> Result<String, ErrBox> {
         Ok(read_to_string(filepath)?)
     }
 
     /// Reads and parses the settings YAML file
-    pub fn get_settings_yaml (filepath: &str) -> Result<Yaml, ErrHandle> {
+    pub fn get_settings_yaml (filepath: &str) -> Result<Yaml, ErrBox> {
         match Settings::read_settings_file(filepath) {
             Ok(s) => {
                 match YamlLoader::load_from_str(&s) {
@@ -68,7 +68,7 @@ impl<'a> Settings<'a> {
     }
 
     /// Creates a Settings instance from command line arguments and configuration YAML
-    pub fn make_settings (tl_commands: &'a TopLevelCommands, settings: &'a Yaml) -> Result<Self, ErrHandle> {
+    pub fn make_settings (tl_commands: &'a TopLevelCommands, settings: &'a Yaml) -> Result<Self, ErrBox> {
         let make_for_model_name = |args: &'a dyn Args, model_name: &str| {
             let data_source = args.data_source();
             let planet_name = args.planet_name().clone();
@@ -141,7 +141,7 @@ impl<'a> Settings<'a> {
     }
 
     /// Returns parameter value as Yaml struct
-    fn get_parameter_yaml(&'a self, parameter: &str) -> Result<&'a Yaml, ErrHandle> {
+    fn get_parameter_yaml(&'a self, parameter: &str) -> Result<&'a Yaml, ErrBox> {
         let y0 = self.common;
         let y1 = self.specific;
         if y1[parameter].is_badvalue() {
@@ -156,7 +156,7 @@ impl<'a> Settings<'a> {
     }
 
     /// Returns parameter value
-    pub fn get_parameter<T: FromStr>(&'a self, parameter: &str, default: T) -> Result<T, ErrHandle> {
+    pub fn get_parameter<T: FromStr>(&'a self, parameter: &str, default: T) -> Result<T, ErrBox> {
         self.get_parameter_yaml(parameter)
         .map_or_else(
             |_| {Some(default)},

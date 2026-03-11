@@ -19,7 +19,7 @@ use crate::MySubCommandEnum::*;
 
 
 /// Does everything that is needed to make a 3d model
-fn materialize(tl_commands: &TopLevelCommands) -> Result<(), ErrHandle> {
+fn materialize(tl_commands: &TopLevelCommands) -> Result<(), ErrBox> {
     let settings_yaml = Settings::get_settings_yaml("./settings.yaml")?;
     let settings = Settings::make_settings(&tl_commands, &settings_yaml)?;
 
@@ -47,7 +47,7 @@ fn materialize(tl_commands: &TopLevelCommands) -> Result<(), ErrHandle> {
     }
 }
 
-fn main() -> Result<(), ErrHandle> {
+fn main() -> Result<(), ErrBox> {
     // let now = Instant::now();
 
     materialize(&argh::from_env())

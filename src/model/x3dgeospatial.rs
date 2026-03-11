@@ -60,7 +60,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle> {
+    fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
         let template_file: String =
                 settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
                 // settings.get_parameter_string("template_file_x3d", DEFAULT_TEMPLATE_FILE)?;
@@ -75,7 +75,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         heights:            Heights,
         _:                  ModelPoints,
         _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file: String =
                 settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
@@ -99,7 +99,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         heights:            Heights,
         _:                  ModelPoints,
         _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file =
                 settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
@@ -116,7 +116,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), ErrHandle> {
+    fn save(&self) -> Result<(), ErrBox> {
         let settings = self.settings;
         let planet_name = &settings.planet_name;
         let output_path = &settings.output_dir;

@@ -26,4 +26,4 @@ pub type GeoPointIndex = usize;
 pub type TextureCoordinate = f64;
 
 /// Type alias for error handling in the application
-pub type ErrHandle = Box<dyn std::error::Error>;
+pub type ErrBox = Box<dyn std::error::Error>;

@@ -103,7 +103,7 @@ pub trait Model<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle>;
+    fn options_check(settings: &'a Settings) -> Result<(), ErrBox>;
 
     /// Creates texture model from model data
     fn build_texture_model(
@@ -113,7 +113,7 @@ pub trait Model<'a> {
         heights:                Heights,
         modelpoints:            ModelPoints,
         elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized;
+        model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
 
     /// Creates color model from model data
     fn build_color_model(
@@ -123,10 +123,10 @@ pub trait Model<'a> {
         heights:                Heights,
         modelpoints:            ModelPoints,
         elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized;
+        model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
 
     /// Creates model for texture model type
-    fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrHandle> where Self:Sized {
+    fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -187,7 +187,7 @@ pub trait Model<'a> {
     }
 
     /// Creates model for color model type
-    fn create_with_color(settings: &'a Settings) -> Result<Self, ErrHandle> where Self:Sized {
+    fn create_with_color(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -214,9 +214,15 @@ pub trait Model<'a> {
                     Ok(func) => func
                 };
 
+        // Fill 'colors' with default color
+        let default_color = match color_mapping(opts.get_sea_level()) { // the default color is the color of sea level
+            Ok(c) => c,
+            Err(err) =>
+                return Err(format!("Can't get default color from color profile file '{}': {}", &color_profile_file, err).into())
+        };
         let mut colors: Colors = BTreeMap::new();
         for k in 0..(2*(model_size+1)*(model_size+1)-1) {
-            colors.insert(k, color_mapping(opts.get_sea_level()));   // XXX: default color is a color of sea_level
+            colors.insert(k, default_color);
         };
 
         let tiles_limit=opts.get_max_number_of_tiles();
@@ -239,9 +245,13 @@ pub trait Model<'a> {
                                         match dem_tile.calc_height(geo_point) {
                                             None => (), // Geo point not in the tile
                                             Some(h) => {
-                                                let c = color_mapping(h.floor() as HeightInt);
-                                                tile_colors.insert(*k, c);
-                                                tile_heights.insert(*k, h);
+                                                match color_mapping(h.floor() as HeightInt) {
+                                                    Ok(c) => {
+                                                        tile_colors.insert(*k, c);
+                                                        tile_heights.insert(*k, h);
+                                                    },
+                                                    Err(err) => eprintln!("{}", err),
+                                                };
                                             }
                                         }
                                     }
@@ -271,6 +281,6 @@ pub trait Model<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), ErrHandle>;
+    fn save(&self) -> Result<(), ErrBox>;
 }
 

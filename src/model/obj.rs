@@ -245,7 +245,7 @@ impl<'a> Model<'a> for Obj<'a> {
     }
 
     /// Checks files and directories
-    fn options_check(settings: &'a Settings) -> Result<(), ErrHandle> {
+    fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
         let template_file_obj =
                 settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
         check_file(&template_file_obj)?;
@@ -262,7 +262,7 @@ impl<'a> Model<'a> for Obj<'a> {
         heights:            Heights,
         modelpoints:        ModelPoints,
         elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file_obj =
                 settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
@@ -293,7 +293,7 @@ impl<'a> Model<'a> for Obj<'a> {
         heights:            Heights,
         modelpoints:        ModelPoints,
         elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrHandle> where Self:Sized {
+        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file_obj =
                 settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
@@ -321,13 +321,13 @@ impl<'a> Model<'a> for Obj<'a> {
     }
 
     /// Saves model data to resulting files
-    fn save(&self) -> Result<(), ErrHandle> {
+    fn save(&self) -> Result<(), ErrBox> {
         let settings = self.settings;
         let planet_name = &settings.planet_name;
         let output_path = &settings.output_dir;
 
         // mtl file
-        let create_mtl = || -> Result<(), ErrHandle> {
+        let create_mtl = || -> Result<(), ErrBox> {
             let mut data = match &self.model_type_data {
                 ModelTypeData::Color(_) if self.color_precision==0 =>
                     String::with_capacity(2*22 * (self.color_precision+1) as usize * (self.color_precision+1) as usize),
@@ -381,7 +381,7 @@ impl<'a> Model<'a> for Obj<'a> {
         };
 
         // obj file
-        let create_obj = || -> Result<(), ErrHandle> {
+        let create_obj = || -> Result<(), ErrBox> {
             let mut data = match &self.model_type_data {
                 ModelTypeData::Color(_) if self.color_precision==0 =>
                     String::with_capacity((3*(FRACTION_LENGHT+4+6)+1)*WRITER_BUF_STRINGS),

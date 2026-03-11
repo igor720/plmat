@@ -42,7 +42,7 @@ pub fn calc_point3d(radius: Height, scale: Height, height: Height, lon: Coord, l
 }
 
 /// Check validity of directory path specification
-pub fn check_dir(value: &String) -> Result<(), ErrHandle> {
+pub fn check_dir(value: &String) -> Result<(), ErrBox> {
     let p = Path::new(&value);
     if p.exists() && p.is_dir() {
         match p.to_str() {
@@ -55,7 +55,7 @@ pub fn check_dir(value: &String) -> Result<(), ErrHandle> {
 }
 
 /// Check validity of file path specification
-pub fn check_file(value: &String) -> Result<(), ErrHandle> {
+pub fn check_file(value: &String) -> Result<(), ErrBox> {
     let p = Path::new(&value);
     if p.exists() && p.is_file() {
         match p.to_str() {
