@@ -1,12 +1,46 @@
+//! Geographic data types and utilities for elevation mapping
+//! 
+//! This module provides core data structures and traits for working with
+//! geographic elevation data, particularly digital elevation models (DEMs).
+//! 
+//! The module defines:
+//! 
+//! - `TileID`: Geographic coordinates for identifying DEM tiles
+//! - `DataSourceOpts`: Interface for configuring data source options
+//! - `TileData`: Interface for accessing elevation data from tiles
+//! 
+//! # Tile Coordinate System
+//! 
+//! Tiles are organized in a geographic grid system where:
+//! 
+//! - Longitude (`lon`) ranges from -180 to 179 degrees
+//! - Latitude (`lat`) ranges from -90 to 89 degrees
+//! - Each tile represents a 1-degree by 1-degree geographic region
+//! 
+//! # Data Source Configuration
+//! 
+//! The `DataSourceOpts` trait allows for flexible configuration of data sources
+//! including:
+//! 
+//! - Nodata values for indicating missing data
+//! - Sea level for elevation calculations
+//! - Tile limit specifications
+//! 
+//! # Tile Data Operations
+//! 
+//! The `TileData` trait provides methods for:
+//! 
+//! - Accessing elevation data at specific grid positions
+//! - Calculating elevation at arbitrary geographic coordinates
+//! - Loading tiles from disk
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt;
-
 use crate::common::types::*;
-
 
 // Static only, not const
 static TILE_COUNT:AtomicUsize = AtomicUsize::new(0);
 
+// Type for integer coordinates
 pub type CoordInt = i16;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -89,27 +123,12 @@ pub trait DataSourceOpts {
 /// and performing geographic calculations on that data.
 pub trait TileData<'a> {
     /// Gets elevation height at a specific row and column in the DEM tile
-    /// 
-    /// # Arguments
-    /// * `i` - Row index in the tile
-    /// * `j` - Column index in the tile
-    /// 
-    /// # Returns
-    /// * `Option<i16>` - Elevation height at the specified location or None if invalid
-    fn get_dem_height(&self, i: usize, j: usize) -> Option<i16>;
+    fn get_dem_height(&self, i: usize, j: usize) -> Option<HeightInt>;
     
     /// Calculates elevation at specific geographic coordinates
     fn calc_height(&self, geo_point: &GeoPoint) -> Option<Height>;
     
     /// Loads a DEM tile from the specified directory with given options
-    /// 
-    /// # Arguments
-    /// * `dir_path` - Path to the directory containing tile data
-    /// * `opts` - Data source options for configuration
-    /// * `tile_id` - Tile ID to load
-    /// 
-    /// # Returns
-    /// * `Result<Option<Self>, String>` - Loaded tile or error message
     fn load<'b: 'a>(dir_path: &str, opts: &'b dyn DataSourceOpts, tile_id: &TileID)
         -> Result<Option<Self>, String> where Self:Sized;
 }
