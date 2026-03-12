@@ -1,13 +1,55 @@
+//! # OBJ Model Generation Module
+//!
+//! This module provides functionality for generating OBJ (Object) files from geographic data.
+//! It supports both textured and colored mesh generation with proper vertex, texture coordinate,
+//! and face (element) handling.
+//!
+//! ## Features
+//!
+//! - **Geographic Mesh Generation**: Creates spherical meshes from geographic coordinates
+//! - **Texture Coordinate Mapping**: Generates UV coordinates for proper texture mapping
+//! - **Color Support**: Supports per-vertex color mapping with color quantization
+//! - **OBJ File Output**: Generates complete OBJ files with proper formatting
+//! - **Memory Efficient**: Uses buffered I/O for handling large meshes
+//!
+//! ## Key Components
+//!
+//! - `Obj` struct: Main implementation for OBJ generation
+//! - `ModelPoints`: Container for vertex and texture coordinate data
+//! - `GeoPoint`: Geographic coordinate representation
+//!
+//! ## Usage
+//!
+//! The module is primarily used through the `Obj` struct which implements the `Model` trait.
+//! It generates OBJ files with:
+//! - Vertex positions (v)
+//! - Texture coordinates (vt)
+//! - Face definitions (f) with proper indexing
+//! - Material definitions for colored meshes
+//!
+//! ## Supported Formats
+//!
+//! - **Textured Meshes**: Uses texture coordinates and material references
+//! - **Colored Meshes**: Uses vertex colors with color quantization
+//! - **Material Definitions**: Automatic generation of material files for colored meshes
+//!
+//! ## Implementation Details
+//!
+//! The module uses a spherical tessellation algorithm to generate mesh geometry.
+//! The mesh is constructed by:
+//! 1. Creating geographic points (latitude/longitude)
+//! 2. Mapping points to 3D Cartesian coordinates
+//! 3. Generating texture coordinates
+//! 4. Creating triangular faces (elements) connecting the vertices
+//! 5. Writing the complete OBJ file structure
 use std::fs::File;
 use std::path::Path;
 use std::io::{BufReader, Read};
 use std::io::{BufWriter, Write};
 use std::collections::{BTreeMap, HashMap};
-
 use crate::common::settings::*;
 use crate::common::types::*;
-use crate::common::util::check_file;
-use crate::common::util::calc_point3d;
+use crate::common::util::*;
 use crate::common::color::*;
 use crate::model::types::*;
 
@@ -23,7 +65,14 @@ const FRACTION_LENGHT: usize = 5;
 const WRITER_BUF_STRINGS: usize = 1000;
 
 
-/// Model struct
+/// Obj model structure
+/// 
+/// This struct represents a 3D geospatial model in OBJ format that can be
+/// created from Digital Elevation Model (DEM) data. It supports both
+/// texture-based and color-based rendering modes.
+/// 
+/// The model is built on a grid where each vertex has geographic coordinates
+/// (longitude and latitude) and elevation values.
 pub struct Obj<'a> {
     settings:           &'a Settings<'a>,
     heights:            Heights,
@@ -38,7 +87,10 @@ pub struct Obj<'a> {
 }
 
 impl<'a> Model<'a> for Obj<'a> {
-    /// Define valid model size
+    /// Validates and returns a valid model size
+    /// 
+    /// Ensures the model size is at least the minimum valid size.
+    /// If no size is provided, returns the minimum valid size.
     fn make_valid_model_size(model_size: Option<GeoPointIndex>) -> GeoPointIndex {
         let _model_size =model_size.unwrap_or(DEFAULT_MODEL_SIZE);
         if _model_size<MIN_VALID_MODEL_SIZE {
@@ -52,12 +104,18 @@ impl<'a> Model<'a> for Obj<'a> {
         }
     }
 
-    /// Define spacing parameter
+    /// Defines the spacing between vertices in the model grid
+    /// 
+    /// Calculates the spacing based on the model size to ensure proper
+    /// geographic coverage of the entire globe (180 degrees in longitude).
     fn define_spacing(model_size: GeoPointIndex) -> Coord {
         180.0/(model_size as Coord)
     }
 
-    /// Creates all geopoints data
+    /// Creates all geographic points (geopoints) for the model
+    /// 
+    /// Generates a grid of geographic points covering the entire globe.
+    /// The points are arranged in a specific pattern to create the 3D surface.
     fn create_modelpoints(model_size: GeoPointIndex, j_spacing: Coord) -> (ModelPoints, Elements) {
         let gnn = model_size/2 as GeoPointIndex;
         let mut geopoints: GeoPoints = BTreeMap::new();
@@ -86,9 +144,7 @@ impl<'a> Model<'a> for Obj<'a> {
             let start_point_index_s = point_index_r+1;
             let i_len = 4*(gnn-j);
             let i_spacing = 360.0/(i_len as Coord);
-            // println!("*** j: {}, i_len: {}, i_spacing: {}", j, i_len, i_spacing);
             for i in 0..i_len {
-                // println!("*** i: {}", i);
                 // north: odd indices
                 geopoints.insert(point_index_r, GeoPoint {
                     lon: -180.0 + i_spacing*i as Coord,
@@ -152,11 +208,9 @@ impl<'a> Model<'a> for Obj<'a> {
         index_hi_s += 2;
         for j in 1..gnn-1 {
             let i_len = 4*(gnn-j);
-            // println!("### j: {}", j);
             for i in 0..i_len {
                 index_hi_n += if i%(gnn-j)==0 {0} else {2};
                 index_hi_s += if i%(gnn-j)==0 {0} else {2};
-                // println!("### i: {}, {:?}", i, (index_low_n, index_low_n+2, index_hi_n));
                 elements.push((index_low_n,  index_low_n+2, index_hi_n));
                 elements.push((index_low_s+2, index_low_s, index_hi_s));
                 if j<gnn-1 && i%(gnn-j)!=0 {
@@ -179,16 +233,12 @@ impl<'a> Model<'a> for Obj<'a> {
                 elements.push((index_low_s+2, index_low_s, index_hi_s));
                 index_low_n += 2;
                 index_low_s += 2;
-                // index_hi_n += 2;
-                // index_hi_s += 2;
             }
         } else {
             for _ in 0..4 {
                 elements.push((index_low, index_low+1, index_hi_n-2));
                 elements.push((index_low+1, index_low, index_hi_s-2));
                 index_low += 1;
-                // index_hi_n += 2;
-                // index_hi_s += 2;
             }
         }
 
@@ -244,7 +294,10 @@ impl<'a> Model<'a> for Obj<'a> {
         texture_coordinates
     }
 
-    /// Checks files and directories
+    /// Checks that required files and directories exist
+    /// 
+    /// Validates that the OBJ and MTL template files exist and are accessible.
+    /// This is necessary for generating the final output files.
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
         let template_file_obj =
                 settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
@@ -254,7 +307,10 @@ impl<'a> Model<'a> for Obj<'a> {
         check_file(&template_file_mtl)
     }
 
-    /// Texture model constructor
+    /// Constructor for texture-based X3D geospatial models
+    /// 
+    /// Creates a new X3DGeospatial model with texture-based rendering.
+    /// This model will use texture mapping to display elevation data.
     fn build_texture_model(
         settings:           &'a Settings,
         _:                  GeoPointIndex,
@@ -285,7 +341,10 @@ impl<'a> Model<'a> for Obj<'a> {
         })
     }
 
-    /// Color model constructor
+    /// Constructor for color-based X3D geospatial models
+    /// 
+    /// Creates a new X3DGeospatial model with color-based rendering.
+    /// This model will use vertex colors to display elevation data.
     fn build_color_model(
         settings:           &'a Settings,
         _:                  GeoPointIndex,
@@ -320,7 +379,10 @@ impl<'a> Model<'a> for Obj<'a> {
         })
     }
 
-    /// Saves model data to resulting files
+    /// Saves the model data to output files
+    /// 
+    /// Writes the final OBJ and MTL file by processing the template files and
+    /// inserting the elevation data and color/texture information.
     fn save(&self) -> Result<(), ErrBox> {
         let settings = self.settings;
         let planet_name = &settings.planet_name;
