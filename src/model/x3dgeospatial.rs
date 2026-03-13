@@ -77,16 +77,18 @@ const DEFAULT_TEXTURE_URI: &str = "\"texture.png\"";
 /// The model is built on a grid where each vertex has geographic coordinates
 /// (longitude and latitude) and elevation values.
 pub struct X3DGeospatial<'a> {
+    model_type:         ModelType,
     /// Reference to the settings configuration
     settings:           &'a Settings<'a>,
     /// Size of the model grid (number of vertices along each dimension)
     model_size:         GeoPointIndex,
-    /// Spacing between vertices in the grid
-    spacing:            Coord,
-    /// Elevation values for each vertex in the model
-    heights:            Heights,
-    /// Model type data (either texture or color information)
-    model_type_data:    ModelTypeData,
+    // /// Spacing between vertices in the grid
+    // spacing:            Coord,
+    // /// Elevation values for each vertex in the model
+    // heights:            Heights,
+    // /// Model type data (either texture or color information)
+    // model_type_data:    ModelTypeData,
+    components:         ModelComponents,
     /// Path to the X3D template file used for output generation
     template_file:      String,
 }
@@ -143,58 +145,81 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         check_file(&template_file)
     }
 
-    /// Constructor for texture-based X3D geospatial models
-    /// 
-    /// Creates a new X3DGeospatial model with texture-based rendering.
-    /// This model will use texture mapping to display elevation data.
-    fn build_texture_model(
+    fn build_model(
+        model_type:         ModelType,
         settings:           &'a Settings,
         model_size:         GeoPointIndex,
-        spacing:            Coord,
-        heights:            Heights,
-        _:                  ModelPoints,
-        _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
-
+        components:         ModelComponents,
+    ) -> Result<Self, ErrBox> where Self:Sized {
         let template_file: String =
                 settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+        check_file(&template_file)?;
 
         return Ok(X3DGeospatial{
+            model_type,
             settings,
             model_size,
-            spacing,
-            heights,
-            model_type_data,
-            template_file,
+            components,
+            template_file
         })
     }
+
+
+
+
+    // /// Constructor for texture-based X3D geospatial models
+    // /// 
+    // /// Creates a new X3DGeospatial model with texture-based rendering.
+    // /// This model will use texture mapping to display elevation data.
+    // fn build_texture_model(
+    //     settings:           &'a Settings,
+    //     model_size:         GeoPointIndex,
+    //     spacing:            Coord,
+    //     heights:            Heights,
+    //     _:                  ModelPoints,
+    //     _:                  Elements,
+    //     model_type_data:    ModelTypeData
+    // ) -> Result<Self, ErrBox> where Self:Sized {
+
+    //     let template_file: String =
+    //             settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+
+    //     return Ok(X3DGeospatial{
+    //         settings,
+    //         model_size,
+    //         spacing,
+    //         heights,
+    //         model_type_data,
+    //         template_file,
+    //     })
+    // }
 
     /// Constructor for color-based X3D geospatial models
     /// 
     /// Creates a new X3DGeospatial model with color-based rendering.
     /// This model will use vertex colors to display elevation data.
-    fn build_color_model(
-        settings:           &'a Settings,
-        model_size:         GeoPointIndex,
-        spacing:            Coord,
-        heights:            Heights,
-        _:                  ModelPoints,
-        _:                  Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
+    // fn build_color_model(
+    //     settings:           &'a Settings,
+    //     model_size:         GeoPointIndex,
+    //     spacing:            Coord,
+    //     heights:            Heights,
+    //     _:                  ModelPoints,
+    //     _:                  Elements,
+    //     model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
-        let template_file =
-                settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
-        check_file(&template_file)?;
+    //     let template_file =
+    //             settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+    //     check_file(&template_file)?;
 
-        return Ok(X3DGeospatial{
-            settings,
-            model_size,
-            spacing,
-            heights,
-            model_type_data,
-            template_file,
-        })
-    }
+    //     return Ok(X3DGeospatial{
+    //         settings,
+    //         model_size,
+    //         spacing,
+    //         heights,
+    //         model_type_data,
+    //         template_file,
+    //     })
+    // }
 
     /// Saves the model data to X3D output files
     /// 
@@ -227,26 +252,35 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         };
 
         let height_values =
-            self.heights
+            self.components.heights
             .values().map(|v| {v.to_string()})
             .collect::<Vec<String>>()
             .join(" ");
 
-        let color_values = match &self.model_type_data {
-            ModelTypeData::Texture(_) => "".to_string(),
-            ModelTypeData::Color(colors) =>
-                colors
+        let color_values = match &self.model_type {
+            ModelType::Texture() => "".to_string(),
+            ModelType::Color() =>
+                self.components.colors.unwrap()
                     .values()
                     .map(|v| {v.to_string()})
                     .collect::<Vec<String>>()
                     .join(" ")
         };
+        // let color_values = match &self.components.model_type_data {
+        //     ModelTypeData::Texture(_) => "".to_string(),
+        //     ModelTypeData::Color(colors) =>
+        //         colors
+        //             .values()
+        //             .map(|v| {v.to_string()})
+        //             .collect::<Vec<String>>()
+        //             .join(" ")
+        // };
 
         let create_height_attr = |elem: &mut BytesStart<'static>| {
                 elem.push_attribute(("xDimension", (2*(self.model_size)+1).to_string().as_str()));
-                elem.push_attribute(("xSpacing", (self.spacing.to_string().as_str())));
+                elem.push_attribute(("xSpacing", (self.components.spacing.to_string().as_str())));
                 elem.push_attribute(("zDimension", ((self.model_size)+1).to_string().as_str()));
-                elem.push_attribute(("zSpacing", (self.spacing.to_string().as_str())));
+                elem.push_attribute(("zSpacing", (self.components.spacing.to_string().as_str())));
                 elem.push_attribute(("height", height_values.as_str()));
         };
 
@@ -286,13 +320,20 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                     if e.name().as_ref() == b"_Color" && in_geo_elevation_grid => {
                         let mut elem = BytesStart::new("Color");
 
-                        match &self.model_type_data {
-                            ModelTypeData::Texture(_) => (),
-                            ModelTypeData::Color(_) => {
+                        match &self.model_type {
+                            ModelType::Texture() => (),
+                            ModelType::Color() => {
                                 elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
                                 elem.push_attribute(("color", color_values.as_str()))
                             }
                         };
+                        // match &self.model_type_data {
+                        //     ModelTypeData::Texture(_) => (),
+                        //     ModelTypeData::Color(_) => {
+                        //         elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
+                        //         elem.push_attribute(("color", color_values.as_str()))
+                        //     }
+                        // };
 
                         assert!(writer.write_event(Event::Empty(elem)).is_ok());
                     },
@@ -301,11 +342,16 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                         let texture_uri =
                                 settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
                         let mut elem = BytesStart::new("ImageTexture");
-                        match &self.model_type_data {
-                            ModelTypeData::Texture(_) =>
+                        match &self.model_type {
+                            ModelType::Texture() =>
                                 elem.push_attribute(("url", &texture_uri[..])),
-                            ModelTypeData::Color(_) => (),
+                            ModelType::Color() => (),
                         };
+                        // match &self.model_type_data {
+                        //     ModelTypeData::Texture(_) =>
+                        //         elem.push_attribute(("url", &texture_uri[..])),
+                        //     ModelTypeData::Color(_) => (),
+                        // };
 
                         assert!(writer.write_event(Event::Empty(elem)).is_ok());
                     },

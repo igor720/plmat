@@ -307,6 +307,39 @@ impl<'a> Model<'a> for Obj<'a> {
         check_file(&template_file_mtl)
     }
 
+    fn build_model(
+        settings:               &'a Settings,
+        model_size:             GeoPointIndex,
+        components:             Box<dyn ModelComponents>,
+        spacing:            Coord,
+        heights:            Heights,
+        modelpoints:        ModelPoints,
+        elements:           Elements,
+        model_type_data:    ModelTypeData
+    ) -> Result<Self, ErrBox> where Self:Sized {
+
+        let template_file_obj =
+                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+        let template_file_mtl =
+                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
+        let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
+
+        return Ok(Obj{
+            settings,
+            heights,
+            modelpoints,
+            elements,
+            model_type_data,
+            template_file_mtl,
+            template_file_obj,
+            scale,
+            radius,
+            color_precision: 0,
+        })
+    }
+
+
     /// Constructor for texture-based X3D geospatial models
     /// 
     /// Creates a new X3DGeospatial model with texture-based rendering.

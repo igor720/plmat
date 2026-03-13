@@ -43,6 +43,7 @@
 //! 6. Model construction and output generation
 use std::collections::HashMap;
 use std::collections::BTreeMap;
+// use std::path::Components;
 use std::thread;
 use std::sync::{Mutex};
 use std::ops::DerefMut;
@@ -64,6 +65,34 @@ pub struct ModelPoints {
     /// Optional mapping between texture points and geopoints
     pub points_map_opt: Option<PointsMapping>,
 }
+
+pub struct ModelComponents {
+    /// Spacing between vertices in the grid
+    pub spacing:                Coord,
+    /// Elevation values for each vertex in the model
+    pub heights:                Heights,
+    /// Model type data (either texture or color information)
+    pub colors:                 Option<Colors>,
+    pub texture_coordinates:    Option<TextureCoordinates>,
+    /// Path to the X3D template file used for output generation
+    // template_file_0:        Option<String>,
+    // template_file_1:        Option<String>,
+    pub geopoints:              Option<GeoPoints>,
+    pub texture_points_mapping: Option<PointsMapping>,
+    pub elements:               Option<Elements>,
+}
+
+impl ModelComponents {
+    fn get_heights(&self) -> &Heights {&self.heights}
+    fn get_spacing(&self) -> Coord {self.spacing}
+    fn get_colors(&self) -> Option<Colors> {self.colors}
+    fn get_texture_coordinates(&self) -> Option<TextureCoordinates> {self.texture_coordinates}
+    // fn get_template_file_0(&self) -> Option<String> {self.template_file_0.clone()}
+    // fn get_template_file_1(&self) -> Option<String> {self.template_file_1.clone()}
+    fn get_geopoints(&self) -> Option<GeoPoints> {self.geopoints}
+    fn get_texture_points_mapping(&self) -> Option<PointsMapping> {self.texture_points_mapping}
+}
+
 
 /// Type alias for geographic points collection using BTreeMap
 /// Key: GeoPointIndex, Value: GeoPoint
@@ -95,12 +124,18 @@ pub type TextureCoordinates = Vec<(TextureCoordinate, TextureCoordinate)>;
 
 /// Enum representing model type specific data
 #[derive(Debug)]
-pub enum ModelTypeData {
-    /// Color data for the model
-    Color(Colors),
-    /// Texture coordinates data for the model
-    Texture(TextureCoordinates),
+pub enum ModelType {
+    /// Color type model
+    Color(),
+    /// Texture type model
+    Texture(),
 }
+// pub enum ModelTypeData {
+//     /// Color data for the model
+//     Color(Colors),
+//     /// Texture coordinates data for the model
+//     Texture(TextureCoordinates),
+// }
 
 /// Creates and returns a data source options struct based on the specified data source name
 pub fn make_data_source_opts(nodata: Option<HeightInt>, sea_level: Option<HeightInt>,
@@ -161,6 +196,15 @@ pub trait Model<'a> {
     /// Checks that required files and directories exist for the model
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox>;
 
+
+    fn build_model(
+        model_type:             ModelType,
+        settings:               &'a Settings,
+        model_size:             GeoPointIndex,
+        components:             ModelComponents,
+    ) -> Result<Self, ErrBox> where Self:Sized;
+
+
     /// Creates a texture model from the provided model data
     /// 
     /// # Arguments
@@ -174,14 +218,15 @@ pub trait Model<'a> {
     /// 
     /// # Returns
     /// Result containing the created model or error
-    fn build_texture_model(
-        settings:               &'a Settings,
-        model_size:             GeoPointIndex,
-        spacing:                Coord,
-        heights:                Heights,
-        modelpoints:            ModelPoints,
-        elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
+    // fn build_texture_model(
+    //     settings:               &'a Settings,
+    //     model_size:             GeoPointIndex,
+    //     spacing:                Coord,
+    //     heights:                Heights,
+    //     modelpoints:            ModelPoints,
+    //     elements:               Elements,
+    //     model_type_data:        ModelTypeData
+    // ) -> Result<Self, ErrBox> where Self:Sized;
 
     /// Creates a color model from the provided model data
     /// 
@@ -196,14 +241,14 @@ pub trait Model<'a> {
     /// 
     /// # Returns
     /// Result containing the created model or error
-    fn build_color_model(
-        args:                   &'a Settings,
-        model_size:             GeoPointIndex,
-        spacing:                Coord,
-        heights:                Heights,
-        modelpoints:            ModelPoints,
-        elements:               Elements,
-        model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
+    // fn build_color_model(
+    //     args:                   &'a Settings,
+    //     model_size:             GeoPointIndex,
+    //     spacing:                Coord,
+    //     heights:                Heights,
+    //     modelpoints:            ModelPoints,
+    //     elements:               Elements,
+    //     model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
 
     /// Creates a texture model by processing tiles in parallel using threads
     fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
@@ -265,9 +310,20 @@ pub trait Model<'a> {
         let heights_ = mutex.into_inner()
             .map_err(|_| "Failed to acquire mutex lock")?;
 
-        let model_type_data = ModelTypeData::Texture(texture_coordinates);
+        // let model_type_data = ModelTypeData::Texture(texture_coordinates);
 
-        Self::build_texture_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
+        let components = ModelComponents {
+            spacing,
+            heights,
+            colors: None,
+            texture_coordinates:    Some(texture_coordinates),
+            geopoints:              Some(modelpoints.geopoints),
+            texture_points_mapping: Some(modelpoints.texture_points_mapping),
+            elements:               None,
+        };
+
+        Self::build_model(ModelType::Texture(), settings, model_size, components)
+        // Self::build_texture_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
     }
 
     /// Creates a color model by processing tiles in parallel using threads
@@ -368,9 +424,22 @@ pub trait Model<'a> {
         } = mutex.into_inner()
             .map_err(|_| "Failed to acquire mutex lock")?;
 
-        let model_type_data = ModelTypeData::Color(colors_);
+        // let model_type_data = ModelTypeData::Color(colors_);
 
-        Self::build_color_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
+        let components = ModelComponents {
+            spacing,
+            heights,
+            colors:                 Some(colors_),
+            texture_coordinates:    None,
+            geopoints:              Some(modelpoints.geopoints),
+            texture_points_mapping: None,
+            elements:               Some(elements),
+        };
+
+        Self::build_model(ModelType::Color(), settings, model_size, components)
+
+
+        // Self::build_color_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
     }
 
     /// Saves the model data to output files
