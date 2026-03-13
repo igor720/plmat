@@ -6,7 +6,7 @@
 
 use std::fs::read_to_string;
 use yaml_rust2::{Yaml, YamlLoader};
-use std::str::FromStr;
+use num_traits::FromPrimitive;
 
 use crate::common::types::*;
 use crate::common::util::*;
@@ -155,19 +155,33 @@ impl<'a> Settings<'a> {
         }
     }
 
-    /// Returns parameter value
-    pub fn get_parameter<T: FromStr>(&'a self, parameter: &str, default: T) -> Result<T, ErrBox> {
-        self.get_parameter_yaml(parameter)
-        .map_or_else(
-            |_| {Some(default)},
-            |y| {
-                y.as_str()
-                .unwrap_or("")
-                .parse::<T>()
-                .ok()
-            }
-            )
-        .ok_or_else(|| {format!("Invalid '{}' parameter in the settings file", parameter).into()})
+    /// Returns number type parameter value
+    pub fn get_parameter_num<T: FromPrimitive>(&'a self, parameter: &str, default: T) -> Result<T, ErrBox> {
+        let err_str = format!("Invalid '{}' parameter in the settings file", parameter);
+
+        match self.get_parameter_yaml(parameter) {
+            Ok(y) =>
+                return match y {
+                    Yaml::Real(_) => y.as_f64().map_or_else(
+                       || { Err(err_str.into()) },
+                       |a| {<T>::from_f64(a).ok_or_else(|| {"".into()})}),
+                    Yaml::Integer(i) => <T>::from_i64(*i).ok_or_else(|| {err_str.into()}),
+                    _ => Err(format!("'{}' parameter must have numeric type in the settings file", parameter).into()),
+                },
+            Err(_) => Ok(default),
+        }
+    }
+
+    /// Returns string type parameter value
+    pub fn get_parameter_str(&'a self, parameter: &str, default: String) -> Result<String, ErrBox> {
+        match self.get_parameter_yaml(parameter) {
+            Ok(y) =>
+                return match y {
+                    Yaml::String(s) => Ok(s.to_string()),
+                    _ => Err(format!("'{}' parameter must have string type in the settings file", parameter).into()),
+                },
+            Err(_) => Ok(default),
+        }
     }
 }
 
@@ -213,21 +227,36 @@ mod tests {
         let filepath = "tests/fixtures/valid_settings.yaml";
         let content = fs::read_to_string(filepath).expect("Failed to read file");
         let yaml = YamlLoader::load_from_str(&content).unwrap();
-        let settings = Settings {
-            planet_name: "Earth".to_string(),
-            model_size: None,
-            jobs: 4,
+        let args = CLIArgsObj {
+            model_type: ModelType::ColorModelType,
             data_source: DataSourceName::DemArcSec3,
-            data_source_dir: DEFAULT_DATA_SOURCE_DIR.to_string(),
-            output_dir: DEFAULT_OUTPUT_DIR.to_string(),
-            nodata: None,
-            sea_level: None,
-            common: &yaml[0],
-            specific: &yaml[0]["Model"]["X3DGeospatial"],
+            jobs: 4,
+            data_source_dir: Some("./".to_string()),
+            output_dir: None,
+            planet_name: "some name".to_string(),
+            model_size: None,
         };
-        assert_eq!(settings.get_parameter("jobs", 4).unwrap(), 4);
+        let tl_command = TopLevelCommands {
+            inner_enum: MySubCommandEnum::SubCommandObj(args)
+        };
+        let settings = Settings::make_settings(&tl_command, &yaml[0]).unwrap();
+        assert_eq!(settings.get_parameter_num("jobs", 4).unwrap(), 4);
+        assert_eq!(
+            settings.get_parameter_str("output_dir", "***".to_string()).unwrap(), 
+            "./".to_string()
+        );
+        // from cmd args
+        assert_eq!(
+            settings.data_source_dir, 
+            "./".to_string()
+        );
+        // from settings file
+        assert_eq!(
+            settings.get_parameter_str("data_source_dir", "***".to_string()).unwrap(), 
+            "./some-dir".to_string()
+        );
     }
-
+    
     #[test]
     fn test_get_parameter_default() {
         let filepath = "tests/fixtures/valid_settings.yaml";
@@ -245,6 +274,7 @@ mod tests {
             common: &yaml[0],
             specific: &yaml[0]["Model"]["X3DGeospatial"],
         };
-        assert_eq!(settings.get_parameter("unknown_param", 123).unwrap(), 123);
+        assert_eq!(settings.get_parameter_num("unknown_param", 123).unwrap(), 123);
+        assert_eq!(settings.get_parameter_str("unknown_param", "123".to_string()).unwrap(), "123".to_string());
     }
 }

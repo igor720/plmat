@@ -11,6 +11,7 @@ Model:
             output_dir: "./"
             radius: 6378000.0
             scale: 50.0
+            data_source_dir: "./some-dir"
         Texture:
             texture_uri: "image-equi-hs-b-1.png"
         Color:

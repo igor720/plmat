@@ -139,7 +139,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     /// This is necessary for generating the final X3D output file.
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
         let template_file: String =
-                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+                settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
         check_file(&template_file)
     }
 
@@ -157,7 +157,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file: String =
-                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+                settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
 
         return Ok(X3DGeospatial{
             settings,
@@ -183,7 +183,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file =
-                settings.get_parameter("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
+                settings.get_parameter_str("template_file_x3d", DEFAULT_TEMPLATE_FILE.to_string())?;
         check_file(&template_file)?;
 
         return Ok(X3DGeospatial{
@@ -299,7 +299,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                 Ok(Event::Empty(e))
                     if e.name().as_ref() == b"_ImageTexture" => {
                         let texture_uri =
-                                settings.get_parameter("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
+                                settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
                         let mut elem = BytesStart::new("ImageTexture");
                         match &self.model_type_data {
                             ModelTypeData::Texture(_) =>

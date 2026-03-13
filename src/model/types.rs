@@ -46,6 +46,7 @@ use std::collections::BTreeMap;
 use std::thread;
 use std::sync::{Mutex};
 use std::ops::DerefMut;
+use num_traits::FromPrimitive;
 use crate::common::args::*;
 use crate::common::settings::*;
 use crate::common::types::*;
@@ -289,7 +290,7 @@ pub trait Model<'a> {
         }
 
         let color_profile_file =
-                settings.get_parameter("color_profile_file", DEFAULT_COLOR_PROFILE_FILE.to_string())?;
+                settings.get_parameter_str("color_profile_file", DEFAULT_COLOR_PROFILE_FILE.to_string())?;
 
         let color_mapping =
                 match get_color_mapping(&color_profile_file) {

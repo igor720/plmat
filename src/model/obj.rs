@@ -300,10 +300,10 @@ impl<'a> Model<'a> for Obj<'a> {
     /// This is necessary for generating the final output files.
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
         let template_file_obj =
-                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
         check_file(&template_file_obj)?;
         let template_file_mtl =
-                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
         check_file(&template_file_mtl)
     }
 
@@ -321,11 +321,11 @@ impl<'a> Model<'a> for Obj<'a> {
         model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file_obj =
-                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
         let template_file_mtl =
-                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
-        let scale = settings.get_parameter("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter("radius", DEFAULT_RADIUS)? as Height;
+                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
+        let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
 
         return Ok(Obj{
             settings,
@@ -355,15 +355,15 @@ impl<'a> Model<'a> for Obj<'a> {
         model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file_obj =
-                settings.get_parameter("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
+                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
         check_file(&template_file_obj)?;
         let template_file_mtl =
-                settings.get_parameter("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
         check_file(&template_file_mtl)?;
 
-        let scale = settings.get_parameter("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter("radius", DEFAULT_RADIUS)? as Height;
-        let color_precision = settings.get_parameter("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
+        let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
+        let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
+        let color_precision = settings.get_parameter_num("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
 
         return Ok(Obj{
             settings,
