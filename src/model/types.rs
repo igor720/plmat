@@ -46,7 +46,6 @@ use std::collections::BTreeMap;
 use std::thread;
 use std::sync::{Mutex};
 use std::ops::DerefMut;
-use num_traits::FromPrimitive;
 use crate::common::args::*;
 use crate::common::settings::*;
 use crate::common::types::*;
