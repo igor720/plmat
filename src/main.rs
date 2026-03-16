@@ -3,15 +3,14 @@
 //! The program for 3d models generation (for web, games, and printing).
 //! Uses geospatial data as input.
 
-// use std::time::Instant;
-
 mod common;
 mod model;
 mod input;
 
+// use std::time::Instant;
 use common::args::*;
 use common::settings::*;
-use model::types::*;
+use model::types::Model;
 use model::x3dgeospatial::*;
 use model::obj::*;
 use crate::common::types::*;

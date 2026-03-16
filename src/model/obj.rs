@@ -40,7 +40,7 @@
 //! 1. Creating geographic points (latitude/longitude)
 //! 2. Mapping points to 3D Cartesian coordinates
 //! 3. Generating texture coordinates
-//! 4. Creating triangular faces (elements) connecting the vertices
+//! 4. Creating triangular faces connecting the vertices
 //! 5. Writing the complete OBJ file structure
 use std::fs::File;
 use std::path::Path;
@@ -58,12 +58,12 @@ const MIN_VALID_MODEL_SIZE: usize = 2;
 const DEFAULT_MODEL_SIZE: usize = 16;
 const DEFAULT_TEMPLATE_FILE_OBJ: &str = "./obj.template";
 const DEFAULT_TEMPLATE_FILE_MTL: &str = "./mtl.template";
+const DEFAULT_TEXTURE_URI: &str ="texture.png";
 const DEFAULT_RADIUS: f64 = 6378000.0;
 const DEFAULT_SCALE: f64 = 1.0;
 const DEFAULT_COLOR_PRECISION: i64 = 0;
 const FRACTION_LENGHT: usize = 5;
 const WRITER_BUF_STRINGS: usize = 1000;
-
 
 /// Obj model structure
 /// 
@@ -74,16 +74,16 @@ const WRITER_BUF_STRINGS: usize = 1000;
 /// The model is built on a grid where each vertex has geographic coordinates
 /// (longitude and latitude) and elevation values.
 pub struct Obj<'a> {
+    model_type:         ModelType,
+    model_size:         GeoPointIndex,
     settings:           &'a Settings<'a>,
-    heights:            Heights,
-    modelpoints:        ModelPoints,
-    elements:           Elements,
-    model_type_data:    ModelTypeData,
-    template_file_mtl:  String,
-    template_file_obj:  String,
     scale:              Height,
     radius:             Height,
     color_precision:    ColorPrecision,
+    texture_uri:        String,
+    components:         ModelComponents,
+    template_file_mtl:  String,
+    template_file_obj:  String,
 }
 
 impl<'a> Model<'a> for Obj<'a> {
@@ -116,11 +116,11 @@ impl<'a> Model<'a> for Obj<'a> {
     /// 
     /// Generates a grid of geographic points covering the entire globe.
     /// The points are arranged in a specific pattern to create the 3D surface.
-    fn create_modelpoints(model_size: GeoPointIndex, j_spacing: Coord) -> (ModelPoints, Elements) {
+    fn create_modelpoints(model_size: GeoPointIndex, j_spacing: Coord) -> ModelData {
         let gnn = model_size/2 as GeoPointIndex;
         let mut geopoints: GeoPoints = BTreeMap::new();
         let mut texture_points: PointsMapping = HashMap::new();
-        let mut elements: Elements = Vec::with_capacity(4*(gnn as usize)*(gnn as usize)+2*(gnn as usize)+1);
+        let mut faces: Faces = Vec::with_capacity(4*(gnn as usize)*(gnn as usize)+2*(gnn as usize)+1);
 
         let mut point_index_r: GeoPointIndex = 0;
         let mut point_index_t: GeoPointIndex = 0;
@@ -191,11 +191,11 @@ impl<'a> Model<'a> for Obj<'a> {
             for i in 0..i_len {
                 index_hi_n += if i%gnn==0 {0} else {2};
                 index_hi_s += if i%gnn==0 {0} else {2};
-                elements.push((index_low, index_low+1, index_hi_n));
-                elements.push((index_low+1, index_low, index_hi_s));
+                faces.push((index_low, index_low+1, index_hi_n));
+                faces.push((index_low+1, index_low, index_hi_s));
                 if i%gnn!=0  {
-                    elements.push((index_low, index_hi_n, index_hi_n-2));
-                    elements.push((index_low, index_hi_s-2, index_hi_s));
+                    faces.push((index_low, index_hi_n, index_hi_n-2));
+                    faces.push((index_low, index_hi_s-2, index_hi_s));
                 }
                 index_low += 1;
             }
@@ -211,11 +211,11 @@ impl<'a> Model<'a> for Obj<'a> {
             for i in 0..i_len {
                 index_hi_n += if i%(gnn-j)==0 {0} else {2};
                 index_hi_s += if i%(gnn-j)==0 {0} else {2};
-                elements.push((index_low_n,  index_low_n+2, index_hi_n));
-                elements.push((index_low_s+2, index_low_s, index_hi_s));
+                faces.push((index_low_n,  index_low_n+2, index_hi_n));
+                faces.push((index_low_s+2, index_low_s, index_hi_s));
                 if j<gnn-1 && i%(gnn-j)!=0 {
-                    elements.push((index_low_n, index_hi_n, index_hi_n-2));
-                    elements.push((index_low_s, index_hi_s-2, index_hi_s));
+                    faces.push((index_low_n, index_hi_n, index_hi_n-2));
+                    faces.push((index_low_s, index_hi_s-2, index_hi_s));
                 }
                 index_low_n += 2;
                 index_low_s += 2;
@@ -229,20 +229,20 @@ impl<'a> Model<'a> for Obj<'a> {
         // pole triangles
         if gnn!=1 {
             for _ in 0..4 {
-                elements.push((index_low_n, index_low_n+2, index_hi_n));
-                elements.push((index_low_s+2, index_low_s, index_hi_s));
+                faces.push((index_low_n, index_low_n+2, index_hi_n));
+                faces.push((index_low_s+2, index_low_s, index_hi_s));
                 index_low_n += 2;
                 index_low_s += 2;
             }
         } else {
             for _ in 0..4 {
-                elements.push((index_low, index_low+1, index_hi_n-2));
-                elements.push((index_low+1, index_low, index_hi_s-2));
+                faces.push((index_low, index_low+1, index_hi_n-2));
+                faces.push((index_low+1, index_low, index_hi_s-2));
                 index_low += 1;
             }
         }
 
-        (ModelPoints {geopoints, points_map_opt: Some(texture_points)}, elements)
+        ModelData::create( geopoints, faces, Some(texture_points) )
     }
 
     /// Creates texture coordinates data
@@ -308,14 +308,10 @@ impl<'a> Model<'a> for Obj<'a> {
     }
 
     fn build_model(
-        settings:               &'a Settings,
-        model_size:             GeoPointIndex,
-        components:             Box<dyn ModelComponents>,
-        spacing:            Coord,
-        heights:            Heights,
-        modelpoints:        ModelPoints,
-        elements:           Elements,
-        model_type_data:    ModelTypeData
+        model_type:         ModelType,
+        model_size:         GeoPointIndex,
+        settings:           &'a Settings,
+        components:         ModelComponents,
     ) -> Result<Self, ErrBox> where Self:Sized {
 
         let template_file_obj =
@@ -324,91 +320,20 @@ impl<'a> Model<'a> for Obj<'a> {
                 settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
         let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
         let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
-
-        return Ok(Obj{
-            settings,
-            heights,
-            modelpoints,
-            elements,
-            model_type_data,
-            template_file_mtl,
-            template_file_obj,
-            scale,
-            radius,
-            color_precision: 0,
-        })
-    }
-
-
-    /// Constructor for texture-based X3D geospatial models
-    /// 
-    /// Creates a new X3DGeospatial model with texture-based rendering.
-    /// This model will use texture mapping to display elevation data.
-    fn build_texture_model(
-        settings:           &'a Settings,
-        _:                  GeoPointIndex,
-        _:                  Coord,
-        heights:            Heights,
-        modelpoints:        ModelPoints,
-        elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
-
-        let template_file_obj =
-                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
-        let template_file_mtl =
-                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
-        let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
-
-        return Ok(Obj{
-            settings,
-            heights,
-            modelpoints,
-            elements,
-            model_type_data,
-            template_file_mtl,
-            template_file_obj,
-            scale,
-            radius,
-            color_precision: 0,
-        })
-    }
-
-    /// Constructor for color-based X3D geospatial models
-    /// 
-    /// Creates a new X3DGeospatial model with color-based rendering.
-    /// This model will use vertex colors to display elevation data.
-    fn build_color_model(
-        settings:           &'a Settings,
-        _:                  GeoPointIndex,
-        _:                  Coord,
-        heights:            Heights,
-        modelpoints:        ModelPoints,
-        elements:           Elements,
-        model_type_data:    ModelTypeData) -> Result<Self, ErrBox> where Self:Sized {
-
-        let template_file_obj =
-                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
-        check_file(&template_file_obj)?;
-        let template_file_mtl =
-                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
-        check_file(&template_file_mtl)?;
-
-        let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
-        let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
         let color_precision = settings.get_parameter_num("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
+        let texture_uri = settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
 
         return Ok(Obj{
+            model_type,
+            model_size,
             settings,
-            heights,
-            modelpoints,
-            elements,
-            model_type_data,
-            template_file_mtl,
-            template_file_obj,
             scale,
             radius,
             color_precision,
+            texture_uri,
+            components,
+            template_file_mtl,
+            template_file_obj,
         })
     }
 
@@ -423,8 +348,8 @@ impl<'a> Model<'a> for Obj<'a> {
 
         // mtl file
         let create_mtl = || -> Result<(), ErrBox> {
-            let mut data = match &self.model_type_data {
-                ModelTypeData::Color(_) if self.color_precision==0 =>
+            let mut data = match &self.model_type {
+                ModelType::Color() if self.color_precision==0 =>
                     String::with_capacity(2*22 * (self.color_precision+1) as usize * (self.color_precision+1) as usize),
                 _ => String::with_capacity(2000),
                 };
@@ -447,14 +372,14 @@ impl<'a> Model<'a> for Obj<'a> {
             let mut br = BufReader::new(f_tmpl);
             br.read_to_string(&mut data)
                 .map_err(|err| {format!("Can't read mtl template file {}: {}", &self.template_file_mtl, err)})?;
-            if let ModelTypeData::Texture(_) = &self.model_type_data {
-                data.push_str("map_Kd texture.png\n")
+            if let ModelType::Texture() = &self.model_type {
+                data.push_str(&format!("map_Kd {}\n", self.texture_uri))
             }
             data.push_str("\n");
             f_mtl.write_all(data.as_bytes())
                 .map_err(|err| {format!("Can't write to mtl file {}: {}", &mtl_path, err)})?;
 
-            if let ModelTypeData::Color(_) = &self.model_type_data {
+            if let ModelType::Color() = &self.model_type {
                 if self.color_precision!=0 {
                     let interval = get_color_interval(self.color_precision);
                     for r_k in 0..=self.color_precision {
@@ -477,12 +402,12 @@ impl<'a> Model<'a> for Obj<'a> {
 
         // obj file
         let create_obj = || -> Result<(), ErrBox> {
-            let mut data = match &self.model_type_data {
-                ModelTypeData::Color(_) if self.color_precision==0 =>
+            let mut data = match &self.model_type {
+                ModelType::Color() if self.color_precision==0 =>
                     String::with_capacity((3*(FRACTION_LENGHT+4+6)+1)*WRITER_BUF_STRINGS),
-                ModelTypeData::Color(_) =>
+                ModelType::Color() =>
                     String::with_capacity((2*3*(FRACTION_LENGHT+4)+1)*WRITER_BUF_STRINGS),
-                ModelTypeData::Texture(_) =>
+                ModelType::Texture() =>
                     String::with_capacity((3*(FRACTION_LENGHT+4)+1)*WRITER_BUF_STRINGS),
                 };
 
@@ -504,6 +429,7 @@ impl<'a> Model<'a> for Obj<'a> {
             let mut br = BufReader::new(f_tmpl);
             br.read_to_string(&mut data)
                 .map_err(|err| {format!("Can't read obj template file {}: {}", &self.template_file_obj, err)})?;
+            data.push_str(&format!("# Model size: {}\n", self.model_size));
             data.push_str(&format!("\nmtllib {}.mtl\n", planet_name));
             data.push_str("o Planet\n");
             f_obj.write_all(data.as_bytes())
@@ -511,18 +437,20 @@ impl<'a> Model<'a> for Obj<'a> {
 
             // vertices
             data.clear();
-            let gps = &self.modelpoints.geopoints;
+            let gps = &self.components.get_geopoints()?;
             let mut vertex_count = 0;
             for (i, gp) in gps.iter() {
                 let GeoPoint {lon, lat} = *gp;
-                let height = match self.heights.get(i) {
+                let height = match self.components.heights.get(i) {
                     None => 0.0,
                     Some(h) => *h
                 };
                 let (x, y, z) = calc_point3d(self.radius, self.scale, height, lon, lat);
-                match &self.model_type_data {
-                    ModelTypeData::Color(colors) if self.color_precision==0 => {
-                        let rgb = colors.get(i).ok_or(format!("Missed color for point {}", i))?;
+                match &self.model_type {
+                    ModelType::Color() if self.color_precision==0 => {
+                        let rgb = self.components.get_colors()?.get(i).ok_or(
+                            format!("Missed color for point {}", i)
+                        )?;
                         data.push_str(format!("v {:.5} {:.5} {:.5} {}\n", x, y, z, rgb).as_str())
                     },
                     _ =>
@@ -542,9 +470,10 @@ impl<'a> Model<'a> for Obj<'a> {
                 .map_err(|err| {format!("Can't write vertices to obj file {}: {}", &result_path, err)})?;
 
             // texture coordinates
-            if let ModelTypeData::Texture(texture_coordinates) = &self.model_type_data {
+            if let ModelType::Texture() = &self.model_type {
                 data.clear();
                 let mut coord_count = 0;
+                let texture_coordinates = self.components.get_texture_coordinates()?;
                 for (u, v) in texture_coordinates.iter() {
                     data.push_str(format!("vt {:.6} {:.6}\n", u, v).as_str());
 
@@ -563,17 +492,14 @@ impl<'a> Model<'a> for Obj<'a> {
                         format!("Can't write texture coordinates to obj file {}: {}", &result_path, err)})?;
             };
 
-            // elements
+            // faces
             data.clear();
             data.push_str("usemtl Material\n");
-            let pmap = match &self.modelpoints.points_map_opt {
-                    None => return Err("Critical: Texture Appearance must use points mapping".into()),
-                    Some(a) => a
-            };
+            let pmap = self.components.get_texture_mapping()?;
             let allowed_color_func = make_allowed_color_function(self.color_precision);
             let mut prev_color_id = None;
-            let mut elements_count = 1;
-            for (tvt0, tvt1, tvt2) in self.elements.iter() {
+            let mut faces_count = 1;
+            for (tvt0, tvt1, tvt2) in self.components.get_faces()?.iter() {
                 let vt0 = match pmap.get(tvt0) {
                     Some(vt) => vt,
                     None => return Err(format!("Point tv0={} isn't found in points mapping", tvt0).into())
@@ -587,13 +513,15 @@ impl<'a> Model<'a> for Obj<'a> {
                     None => return Err(format!("Point tv2={} isn't found in points mapping", tvt2).into())
                 };
 
-                match &self.model_type_data {
-                    ModelTypeData::Texture(_) =>
+                match &self.model_type {
+                    ModelType::Texture() =>
                         data.push_str(format!("f {}/{} {}/{} {}/{}\n", vt0+1, tvt0+1, vt1+1, tvt1+1, vt2+1, tvt2+1).as_str()),
-                    ModelTypeData::Color(_) if self.color_precision==0 =>
+                    ModelType::Color() if self.color_precision==0 =>
                         data.push_str(format!("f {} {} {}\n", vt0+1, vt1+1, vt2+1).as_str()),
-                    ModelTypeData::Color(colors) => {
-                        let color = colors.get(vt0).ok_or(format!("Missed color for vertex {}", vt0))?;
+                    ModelType::Color() => {
+                        let color = self.components.get_colors()?.get(vt0).ok_or(
+                            format!("Missed color for vertex {}", vt0)
+                        )?;
                         let (_, color_id@(r_k, g_k, b_k)) = allowed_color_func(*color);
                         if prev_color_id.is_none() || Some(color_id)!=prev_color_id {
                             data.push_str(format!("usemtl c_{}_{}_{}\n", r_k, g_k, b_k).as_str());
@@ -603,18 +531,18 @@ impl<'a> Model<'a> for Obj<'a> {
                     },
                 }
 
-                if elements_count%WRITER_BUF_STRINGS==WRITER_BUF_STRINGS-1 {
+                if faces_count%WRITER_BUF_STRINGS==WRITER_BUF_STRINGS-1 {
                     f_obj.write_all(data.as_bytes())
                         .map_err(|err| {
-                            format!("Can't write chunk of elements to obj file {}: {}", &result_path, err)})?;
+                            format!("Can't write chunk of faces to obj file {}: {}", &result_path, err)})?;
                     data.clear();
                 }
-                elements_count += 1;
+                faces_count += 1;
             }
 
-            data.push_str(format!("# {} elements\n\n", self.elements.len()).as_str());
+            data.push_str(format!("# {} faces\n\n", self.components.get_faces()?.len()).as_str());
             f_obj.write_all(data.as_bytes())
-                .map_err(|err| {format!("Can't write elements to obj file {}: {}", &result_path, err)})?;
+                .map_err(|err| {format!("Can't write faces to obj file {}: {}", &result_path, err)})?;
 
             f_obj.flush()
                 .map_err(|err| {format!("Can't flush obj file {}: {}", &result_path, err).into()})
@@ -634,9 +562,9 @@ mod tests {
     fn create_geopoints_t0() {
         let model_size = Obj::make_valid_model_size(Some(3));
         let j_spacing = Obj::define_spacing(model_size);
-        let (ModelPoints {geopoints, points_map_opt: pmap_opt}, elms) =
+        let ModelData (geopoints, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
-        let pmap = pmap_opt.unwrap();
+        let pmap = texture_mapping.unwrap();
         // println!("{:?}", geopoints);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);
@@ -654,9 +582,9 @@ mod tests {
     fn create_geopoints_t1() {
         let model_size = Obj::make_valid_model_size(Some(4));
         let j_spacing = Obj::define_spacing(model_size);
-        let (ModelPoints {geopoints, points_map_opt: pmap_opt}, elms) =
+        let ModelData (geopoints, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
-        let pmap = pmap_opt.unwrap();
+        let pmap = texture_mapping.unwrap();
         // println!("{:?}", geopoints);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);
@@ -678,9 +606,9 @@ mod tests {
     fn create_geopoints_t2() {
         let model_size = Obj::make_valid_model_size(Some(8));
         let j_spacing = Obj::define_spacing(model_size);
-        let (ModelPoints {geopoints, points_map_opt: pmap_opt}, elms) =
+        let ModelData (geopoints, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
-        let pmap = pmap_opt.unwrap();
+        let pmap = texture_mapping.unwrap();
         // println!("{:?}", geopoints);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);

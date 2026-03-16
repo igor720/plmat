@@ -57,13 +57,13 @@ use crate::input::dem::*;
 /// Default path for color profile file
 const DEFAULT_COLOR_PROFILE_FILE: &str = "./color_profile";
 
-/// Container for model points data including geopoints and optional point mapping
+/// Enum representing model type specific data
 #[derive(Debug)]
-pub struct ModelPoints {
-    /// Collection of geographic points that make up the model
-    pub geopoints: GeoPoints,
-    /// Optional mapping between texture points and geopoints
-    pub points_map_opt: Option<PointsMapping>,
+pub enum ModelType {
+    /// Color type model
+    Color(),
+    /// Texture type model
+    Texture(),
 }
 
 pub struct ModelComponents {
@@ -74,25 +74,32 @@ pub struct ModelComponents {
     /// Model type data (either texture or color information)
     pub colors:                 Option<Colors>,
     pub texture_coordinates:    Option<TextureCoordinates>,
-    /// Path to the X3D template file used for output generation
-    // template_file_0:        Option<String>,
-    // template_file_1:        Option<String>,
     pub geopoints:              Option<GeoPoints>,
-    pub texture_points_mapping: Option<PointsMapping>,
-    pub elements:               Option<Elements>,
+    pub texture_mapping:        Option<PointsMapping>,
+    pub faces:                  Option<Faces>,
 }
 
 impl ModelComponents {
-    fn get_heights(&self) -> &Heights {&self.heights}
-    fn get_spacing(&self) -> Coord {self.spacing}
-    fn get_colors(&self) -> Option<Colors> {self.colors}
-    fn get_texture_coordinates(&self) -> Option<TextureCoordinates> {self.texture_coordinates}
-    // fn get_template_file_0(&self) -> Option<String> {self.template_file_0.clone()}
-    // fn get_template_file_1(&self) -> Option<String> {self.template_file_1.clone()}
-    fn get_geopoints(&self) -> Option<GeoPoints> {self.geopoints}
-    fn get_texture_points_mapping(&self) -> Option<PointsMapping> {self.texture_points_mapping}
-}
+    pub fn get_colors(&self) -> Result<&Colors, ErrBox> {
+        self.colors.as_ref().ok_or("Can't get model colors".into())
+    }
 
+    pub fn get_texture_coordinates(&self) -> Result<&TextureCoordinates, ErrBox> {
+        self.texture_coordinates.as_ref().ok_or("Can't get model texture coordinates".into())
+    }
+
+    pub fn get_geopoints(&self) -> Result<&GeoPoints, ErrBox> {
+        self.geopoints.as_ref().ok_or("Can't get model geopoints".into())
+    }
+
+    pub fn get_texture_mapping(&self) -> Result<&PointsMapping, ErrBox> {
+        self.texture_mapping.as_ref().ok_or("Can't get texture points mapping".into())
+    }
+
+    pub fn get_faces(&self) -> Result<&Faces, ErrBox> {
+        self.faces.as_ref().ok_or("Can't get model faces".into())
+    }
+}
 
 /// Type alias for geographic points collection using BTreeMap
 /// Key: GeoPointIndex, Value: GeoPoint
@@ -106,9 +113,9 @@ pub type PointsMapping = HashMap<GeoPointIndex, GeoPointIndex>;
 /// Key: TileID, Value: Vector of (GeoPointIndex, &GeoPoint) tuples
 pub type GeoPointsToTilesMapping<'a> = HashMap<TileID, Vec<(GeoPointIndex, &'a GeoPoint)>>;
 
-/// Type alias for model elements (triangles) using vector of tuples
+/// Type alias for model Faces (triangles) using vector of tuples
 /// Each tuple represents a triangle defined by three GeoPointIndex values
-pub type Elements = Vec<(GeoPointIndex, GeoPointIndex, GeoPointIndex)>;
+pub type Faces = Vec<(GeoPointIndex, GeoPointIndex, GeoPointIndex)>;
 
 /// Type alias for elevation data using BTreeMap
 /// Key: GeoPointIndex, Value: Height (floating-point elevation value)
@@ -122,20 +129,14 @@ pub type Colors = BTreeMap<GeoPointIndex, RGB>;
 /// Each tuple represents (u, v) texture coordinates
 pub type TextureCoordinates = Vec<(TextureCoordinate, TextureCoordinate)>;
 
-/// Enum representing model type specific data
-#[derive(Debug)]
-pub enum ModelType {
-    /// Color type model
-    Color(),
-    /// Texture type model
-    Texture(),
+/// Container for model points data including geopoints and optional point mapping
+pub struct ModelData (pub GeoPoints, pub Faces, pub Option<PointsMapping>);
+
+impl ModelData {
+    pub fn create(geopoints: GeoPoints, faces: Faces, texture_mapping: Option<PointsMapping>) -> Self {
+        Self( geopoints, faces, texture_mapping )
+    }
 }
-// pub enum ModelTypeData {
-//     /// Color data for the model
-//     Color(Colors),
-//     /// Texture coordinates data for the model
-//     Texture(TextureCoordinates),
-// }
 
 /// Creates and returns a data source options struct based on the specified data source name
 pub fn make_data_source_opts(nodata: Option<HeightInt>, sea_level: Option<HeightInt>,
@@ -166,12 +167,12 @@ pub trait Model<'a> {
     /// Defines a valid model size, ensuring it meets minimum requirements
     fn make_valid_model_size(model_size: Option<GeoPointIndex>) -> GeoPointIndex;
 
-    /// Creates geographic points and elements for the model
-    fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> (ModelPoints, Elements);
+    /// Creates geographic points and Faces for the model
+    fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> ModelData; //(ModelPoints, Faces);
 
     /// Returns number of points in the model
-    fn num_model_vertices(_: GeoPointIndex, modelpoints: &ModelPoints) -> GeoPointIndex {
-        modelpoints.geopoints.len() as GeoPointIndex // 2*(model_size+1)*(model_size+1)-1
+    fn num_model_vertices(_: GeoPointIndex, geopoints: &GeoPoints) -> GeoPointIndex {
+        geopoints.len() as GeoPointIndex // 2*(model_size+1)*(model_size+1)-1
     }
 
     /// Creates texture coordinates for the model
@@ -196,59 +197,19 @@ pub trait Model<'a> {
     /// Checks that required files and directories exist for the model
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox>;
 
-
-    fn build_model(
-        model_type:             ModelType,
-        settings:               &'a Settings,
-        model_size:             GeoPointIndex,
-        components:             ModelComponents,
-    ) -> Result<Self, ErrBox> where Self:Sized;
-
-
     /// Creates a texture model from the provided model data
     /// 
     /// # Arguments
+    /// * `model_type` - Type of the model to create (ModelType enum)
+    /// * `model_size` - Size of the model to create
     /// * `settings` - Configuration settings for the model
-    /// * `model_size` - Size of the model to create
-    /// * `spacing` - Spacing between points in the model
-    /// * `heights` - Elevation data for the model
-    /// * `modelpoints` - Model points data
-    /// * `elements` - Model elements (triangles)
-    /// * `model_type_data` - Type-specific model data (texture coordinates)
-    /// 
-    /// # Returns
-    /// Result containing the created model or error
-    // fn build_texture_model(
-    //     settings:               &'a Settings,
-    //     model_size:             GeoPointIndex,
-    //     spacing:                Coord,
-    //     heights:                Heights,
-    //     modelpoints:            ModelPoints,
-    //     elements:               Elements,
-    //     model_type_data:        ModelTypeData
-    // ) -> Result<Self, ErrBox> where Self:Sized;
-
-    /// Creates a color model from the provided model data
-    /// 
-    /// # Arguments
-    /// * `args` - Configuration settings for the model
-    /// * `model_size` - Size of the model to create
-    /// * `spacing` - Spacing between points in the model
-    /// * `heights` - Elevation data for the model
-    /// * `modelpoints` - Model points data
-    /// * `elements` - Model elements (triangles)
-    /// * `model_type_data` - Type-specific model data (colors)
-    /// 
-    /// # Returns
-    /// Result containing the created model or error
-    // fn build_color_model(
-    //     args:                   &'a Settings,
-    //     model_size:             GeoPointIndex,
-    //     spacing:                Coord,
-    //     heights:                Heights,
-    //     modelpoints:            ModelPoints,
-    //     elements:               Elements,
-    //     model_type_data:        ModelTypeData) -> Result<Self, ErrBox> where Self:Sized;
+    /// * `components` - Model data
+    fn build_model(
+        model_type:             ModelType,
+        model_size:             GeoPointIndex,
+        settings:               &'a Settings,
+        components:             ModelComponents,
+    ) -> Result<Self, ErrBox> where Self:Sized;
 
     /// Creates a texture model by processing tiles in parallel using threads
     fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
@@ -259,13 +220,13 @@ pub trait Model<'a> {
         let model_size = Self::make_valid_model_size(settings.model_size);
         let spacing = Self::define_spacing(model_size);
 
-        let (modelpoints, elements) = Self::create_modelpoints(model_size, spacing);
-        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &modelpoints.geopoints);
+        let ModelData (geopoints, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
+        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &geopoints);
 
         let texture_coordinates = Self::create_texture_coordinates(model_size);
 
         let mut heights: Heights = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &modelpoints) {
+        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
             // Default height is sea level
             assert_eq!(heights.insert(k, opts.get_sea_level() as Height), None)
         }
@@ -307,23 +268,22 @@ pub trait Model<'a> {
             }
         });
 
-        let heights_ = mutex.into_inner()
+        let heights_ready = mutex.into_inner()
             .map_err(|_| "Failed to acquire mutex lock")?;
 
         // let model_type_data = ModelTypeData::Texture(texture_coordinates);
 
         let components = ModelComponents {
             spacing,
-            heights,
+            heights: heights_ready,
             colors: None,
             texture_coordinates:    Some(texture_coordinates),
-            geopoints:              Some(modelpoints.geopoints),
-            texture_points_mapping: Some(modelpoints.texture_points_mapping),
-            elements:               None,
+            geopoints:              Some(geopoints),
+            texture_mapping,
+            faces:                  Some(faces),
         };
 
-        Self::build_model(ModelType::Texture(), settings, model_size, components)
-        // Self::build_texture_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
+        Self::build_model(ModelType::Texture(), model_size, settings, components)
     }
 
     /// Creates a color model by processing tiles in parallel using threads
@@ -335,11 +295,11 @@ pub trait Model<'a> {
         let model_size = Self::make_valid_model_size(settings.model_size);
         let spacing = Self::define_spacing(model_size);
 
-        let (modelpoints, elements) = Self::create_modelpoints(model_size, spacing);
-        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &modelpoints.geopoints);
+        let ModelData(geopoints, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
+        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &geopoints);
 
         let mut heights: Heights = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &modelpoints) {
+        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
             // Default height is sea level
             assert_eq!(heights.insert(k, opts.get_sea_level() as Height), None)
         }
@@ -361,7 +321,7 @@ pub trait Model<'a> {
                 return Err(format!("Can't get default color from color profile file '{}': {}", &color_profile_file, err).into())
         };
         let mut colors: Colors = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &modelpoints) {
+        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
             colors.insert(k, default_color);
         };
 
@@ -419,7 +379,7 @@ pub trait Model<'a> {
         });
 
         let MutexStruct {
-            heights: heights_,
+            heights: heights_ready,
             colors: colors_,
         } = mutex.into_inner()
             .map_err(|_| "Failed to acquire mutex lock")?;
@@ -428,18 +388,15 @@ pub trait Model<'a> {
 
         let components = ModelComponents {
             spacing,
-            heights,
+            heights: heights_ready,
             colors:                 Some(colors_),
             texture_coordinates:    None,
-            geopoints:              Some(modelpoints.geopoints),
-            texture_points_mapping: None,
-            elements:               Some(elements),
+            geopoints:              Some(geopoints),
+            texture_mapping,
+            faces:                  Some(faces),
         };
 
-        Self::build_model(ModelType::Color(), settings, model_size, components)
-
-
-        // Self::build_color_model(settings, model_size, spacing, heights_, modelpoints, elements, model_type_data)
+        Self::build_model(ModelType::Color(), model_size, settings, components)
     }
 
     /// Saves the model data to output files
