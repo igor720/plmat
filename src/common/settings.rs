@@ -98,8 +98,8 @@ impl<'a> Settings<'a> {
             };
 
             let y1 = match &args.model_type() {
-                ModelType::TextureModelType => &settings["Model"][model_name]["Texture"],
-                ModelType::ColorModelType => &settings["Model"][model_name]["Color"],
+                ModelType::Texture => &settings["Model"][model_name]["Texture"],
+                ModelType::Color => &settings["Model"][model_name]["Color"],
             };
             if y1.is_badvalue() {
                 return Err(format!("The model type section for '{}' is missed in settings file", model_name).into())
@@ -210,7 +210,7 @@ mod tests {
         let yaml = YamlLoader::load_from_str(&content).unwrap()[0].clone();
         // You need to set up a TopLevelCommands and Yaml for this test
         let args = CLIArgsX3DGeospatial {
-            model_type: ModelType::TextureModelType,
+            model_type: ModelType::Texture,
             data_source: DataSourceName::DemArcSec3,
             planet_name: "test-planet".to_string(),
             model_size: Some(8),
@@ -228,7 +228,7 @@ mod tests {
         let content = fs::read_to_string(filepath).expect("Failed to read file");
         let yaml = YamlLoader::load_from_str(&content).unwrap();
         let args = CLIArgsObj {
-            model_type: ModelType::ColorModelType,
+            model_type: ModelType::Color,
             data_source: DataSourceName::DemArcSec3,
             jobs: 4,
             data_source_dir: Some("./".to_string()),

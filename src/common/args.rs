@@ -8,23 +8,15 @@ use argh::FromArgs;
 
 use crate::common::types::*;
 
-/// Enum representing different types of 3D model
-#[derive(Debug, PartialEq, Clone)]
-/// 3d model type that determines its appearance
-pub enum ModelType {
-    TextureModelType,
-    ColorModelType,
-}
-
 /// Get the model type based on a string value.
 /// # Arguments
 /// * `value` - A string slice that represents the model type.
 /// # Returns
-/// Result containing either the ModelType or an error message if the type is unknown.
+/// Result containing either the ArgModelType or an error message if the type is unknown.
 fn get_model_type(value: &str) -> Result<ModelType, String> {
     match value {
-        "texture" => Ok(ModelType::TextureModelType),
-        "color" => Ok(ModelType::ColorModelType),
+        "texture" => Ok(ModelType::Texture),
+        "color" => Ok(ModelType::Color),
         _ => Err("Unknown model type".to_string())
     }
 }

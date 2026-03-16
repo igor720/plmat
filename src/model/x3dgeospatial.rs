@@ -107,19 +107,19 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         180.0/(model_size as Coord)
     }
 
-    /// Creates all geographic points (geopoints) for the model
+    /// Creates all geographic points (vertices) for the model
     /// 
     /// Generates a grid of geographic points covering the entire globe.
     /// The points are arranged in a specific pattern to create the 3D surface.
     fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> ModelData {
-        // let mut geopoints: GeoPoints = HashMap::with_capacity(2*(model_size+1)*(model_size+1));
-        let mut geopoints: GeoPoints = BTreeMap::new();
+        // let mut vertices: Vertices = HashMap::with_capacity(2*(model_size+1)*(model_size+1));
+        let mut vertices: Vertices = BTreeMap::new();
 
         let model_size2 = 2*model_size as GeoPointIndex;
         let mut count: GeoPointIndex = 0;
         for j in 0..=model_size {
             for i in 0..=model_size2 {
-                geopoints.insert(count, GeoPoint {
+                vertices.insert(count, GeoPoint {
                     // wraping around the global dateline
                     lon: (-180.0) + spacing*(if i==model_size2 {0} else {i} as Coord),
                     lat: (-90.0)  + spacing*(j as Coord)
@@ -128,7 +128,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
             }
         }
 
-        ModelData::create( geopoints, vec!(), None )
+        ModelData::create( vertices, vec!(), None )
     }
 
     /// Checks that required files and directories exist
@@ -197,8 +197,8 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
             .join(" ");
 
         let color_values = match &self.model_type {
-            ModelType::Texture() => "".to_string(),
-            ModelType::Color() =>
+            ModelType::Texture => "".to_string(),
+            ModelType::Color =>
                 self.components.get_colors()?
                     .values()
                     .map(|v| {v.to_string()})
@@ -249,8 +249,8 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                         let mut elem = BytesStart::new("Color");
 
                         match &self.model_type {
-                            ModelType::Texture() => (),
-                            ModelType::Color() => {
+                            ModelType::Texture => (),
+                            ModelType::Color => {
                                 elem.extend_attributes(e.attributes().map(|attr| attr.unwrap()));
                                 elem.push_attribute(("color", color_values.as_str()))
                             }
@@ -264,9 +264,10 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
                                 settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
                         let mut elem = BytesStart::new("ImageTexture");
                         match &self.model_type {
-                            ModelType::Texture() =>
-                                elem.push_attribute(("url", &texture_uri[..])),
-                            ModelType::Color() => (),
+                            ModelType::Texture => {
+                                elem.push_attribute(("url", &texture_uri[..]))
+                            },
+                            ModelType::Color => (),
                         };
 
                         assert!(writer.write_event(Event::Empty(elem)).is_ok());

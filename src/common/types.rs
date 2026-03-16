@@ -1,3 +1,12 @@
+/// Enum representing different types of 3D model
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum ModelType {
+    /// Color type model
+    Color,
+    /// Texture type model
+    Texture,
+}
+
 /// Elevation as floating point number
 pub type Height = f64;
 

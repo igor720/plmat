@@ -87,6 +87,8 @@ pub type ColorMappning = HashMap<HeightInt, RGB>;
 /// where each string corresponds to a line in the file.
 type ColorProfileFileContent = Vec<String>;
 
+// type ColorMappingFunction = impl Fn(HeightInt) -> Result<RGB, ErrBox>;
+
 /// Color profile record
 /// 
 /// Represents a single record in a color profile file containing:

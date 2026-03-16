@@ -58,13 +58,13 @@ use crate::input::dem::*;
 const DEFAULT_COLOR_PROFILE_FILE: &str = "./color_profile";
 
 /// Enum representing model type specific data
-#[derive(Debug)]
-pub enum ModelType {
-    /// Color type model
-    Color(),
-    /// Texture type model
-    Texture(),
-}
+// #[derive(Debug)]
+// pub enum ModelType {
+//     /// Color type model
+//     Color(),
+//     /// Texture type model
+//     Texture(),
+// }
 
 pub struct ModelComponents {
     /// Spacing between vertices in the grid
@@ -74,7 +74,7 @@ pub struct ModelComponents {
     /// Model type data (either texture or color information)
     pub colors:                 Option<Colors>,
     pub texture_coordinates:    Option<TextureCoordinates>,
-    pub geopoints:              Option<GeoPoints>,
+    pub vertices:               Option<Vertices>,
     pub texture_mapping:        Option<PointsMapping>,
     pub faces:                  Option<Faces>,
 }
@@ -88,8 +88,8 @@ impl ModelComponents {
         self.texture_coordinates.as_ref().ok_or("Can't get model texture coordinates".into())
     }
 
-    pub fn get_geopoints(&self) -> Result<&GeoPoints, ErrBox> {
-        self.geopoints.as_ref().ok_or("Can't get model geopoints".into())
+    pub fn get_vertices(&self) -> Result<&Vertices, ErrBox> {
+        self.vertices.as_ref().ok_or("Can't get model vertices".into())
     }
 
     pub fn get_texture_mapping(&self) -> Result<&PointsMapping, ErrBox> {
@@ -101,17 +101,17 @@ impl ModelComponents {
     }
 }
 
-/// Type alias for geographic points collection using BTreeMap
+/// Type alias for model vertices collection using BTreeMap
 /// Key: GeoPointIndex, Value: GeoPoint
-pub type GeoPoints = BTreeMap<GeoPointIndex, GeoPoint>;
+pub type Vertices = BTreeMap<GeoPointIndex, GeoPoint>;
 
-/// Type alias for mapping between texture points and geopoints using HashMap
+/// Type alias for mapping between texture points and vertices using HashMap
 /// Key: GeoPointIndex, Value: GeoPointIndex
 pub type PointsMapping = HashMap<GeoPointIndex, GeoPointIndex>;
 
 /// Type alias for mapping geographic points to tiles using HashMap
 /// Key: TileID, Value: Vector of (GeoPointIndex, &GeoPoint) tuples
-pub type GeoPointsToTilesMapping<'a> = HashMap<TileID, Vec<(GeoPointIndex, &'a GeoPoint)>>;
+pub type VerticesToTilesMapping<'a> = HashMap<TileID, Vec<(GeoPointIndex, &'a GeoPoint)>>;
 
 /// Type alias for model Faces (triangles) using vector of tuples
 /// Each tuple represents a triangle defined by three GeoPointIndex values
@@ -129,12 +129,12 @@ pub type Colors = BTreeMap<GeoPointIndex, RGB>;
 /// Each tuple represents (u, v) texture coordinates
 pub type TextureCoordinates = Vec<(TextureCoordinate, TextureCoordinate)>;
 
-/// Container for model points data including geopoints and optional point mapping
-pub struct ModelData (pub GeoPoints, pub Faces, pub Option<PointsMapping>);
+/// Container for model points data including vertices and optional point mapping
+pub struct ModelData (pub Vertices, pub Faces, pub Option<PointsMapping>);
 
 impl ModelData {
-    pub fn create(geopoints: GeoPoints, faces: Faces, texture_mapping: Option<PointsMapping>) -> Self {
-        Self( geopoints, faces, texture_mapping )
+    pub fn create(vertices: Vertices, faces: Faces, texture_mapping: Option<PointsMapping>) -> Self {
+        Self( vertices, faces, texture_mapping )
     }
 }
 
@@ -171,8 +171,8 @@ pub trait Model<'a> {
     fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> ModelData; //(ModelPoints, Faces);
 
     /// Returns number of points in the model
-    fn num_model_vertices(_: GeoPointIndex, geopoints: &GeoPoints) -> GeoPointIndex {
-        geopoints.len() as GeoPointIndex // 2*(model_size+1)*(model_size+1)-1
+    fn num_model_vertices(_: GeoPointIndex, vertices: &Vertices) -> GeoPointIndex {
+        vertices.len() as GeoPointIndex // 2*(model_size+1)*(model_size+1)-1
     }
 
     /// Creates texture coordinates for the model
@@ -181,17 +181,17 @@ pub trait Model<'a> {
     }
 
     /// Creates mapping between geographic points and tiles
-    fn create_geopoints_tiles<'b>(opts: &'b impl DataSourceOpts, geopoints: &'b GeoPoints) -> GeoPointsToTilesMapping<'b> {
-        let mut geopoints_tiles: GeoPointsToTilesMapping =
+    fn create_vertices_tiles<'b>(opts: &'b impl DataSourceOpts, vertices: &'b Vertices) -> VerticesToTilesMapping<'b> {
+        let mut vertices_tiles: VerticesToTilesMapping =
             HashMap::with_capacity(opts.get_max_number_of_tiles());
-        for (k, geo_point) in geopoints {
+        for (k, geo_point) in vertices {
             let tile_id = opts.find_tile_id(geo_point);
-            match geopoints_tiles.get_mut(&tile_id) {
+            match vertices_tiles.get_mut(&tile_id) {
                 Some(v) => v.push((*k, geo_point)),
-                None => {geopoints_tiles.insert(tile_id, vec![(*k, geo_point)]);},
+                None => {vertices_tiles.insert(tile_id, vec![(*k, geo_point)]);},
             }
         }
-        geopoints_tiles
+        vertices_tiles
     }
 
     /// Checks that required files and directories exist for the model
@@ -211,83 +211,41 @@ pub trait Model<'a> {
         components:             ModelComponents,
     ) -> Result<Self, ErrBox> where Self:Sized;
 
-    /// Creates a texture model by processing tiles in parallel using threads
-    fn create_with_texture(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
-        Self::options_check(settings)?;
-        let data_source_name = &settings.data_source;
-        let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
+    fn calc() {}
 
-        let model_size = Self::make_valid_model_size(settings.model_size);
-        let spacing = Self::define_spacing(model_size);
 
-        let ModelData (geopoints, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
-        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &geopoints);
-
-        let texture_coordinates = Self::create_texture_coordinates(model_size);
-
-        let mut heights: Heights = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
-            // Default height is sea level
-            assert_eq!(heights.insert(k, opts.get_sea_level() as Height), None)
-        }
-
-        let tiles_limit=opts.get_max_number_of_tiles();
-        let mutex=Mutex::new(heights);
-
-        thread::scope(|scope|{
-            for _job in 1..=settings.jobs { 
-                scope.spawn(|| {
-                    while let Some(tile_id) = TileID::next(tiles_limit) {
-                        let mut tile_heights: Heights = BTreeMap::new();
-                        match geopoints_tiles.get(&tile_id) {
-                            Some(tile_geopoints) => {
-                                let load_result =
-                                        load_tile_data(&settings.data_source_dir, data_source_name, &opts, &tile_id);
-                                match load_result {
-                                    Err(err) => eprintln!("{}", err),
-                                    Ok(None) => (),
-                                    Ok(Some(dem_tile)) => {
-                                        for (k, geo_point) in tile_geopoints {
-                                            match dem_tile.calc_height(geo_point) {
-                                                None => (), // Geo point not in the tile
-                                                Some(h) => {
-                                                    tile_heights.insert(*k, h);
-                                                }
-                                            }
-                                        }
-                                        let mut heights = mutex.lock().unwrap();
-                                        heights.append(&mut tile_heights);
-                                        drop(heights);
-                                    }
-                                }
+    fn calc1(
+            model_type: ModelType,
+            color_mapping: impl Fn(HeightInt) -> Result<RGB, ErrBox>,
+            tile_heights: &mut Heights, 
+            tile_colors: &mut Colors, 
+            h_res: Option<Height>,
+            k: usize
+        ) {
+        match h_res {
+            None => (), // Geopoint not in the tile
+            Some(h) => {
+                match model_type {
+                    ModelType::Texture => {
+                        (*tile_heights).insert(k, h);
+                    },
+                    ModelType::Color => {
+                        match color_mapping(h.floor() as HeightInt) {
+                            Ok(c) => {
+                                (*tile_colors).insert(k, c);
+                                (*tile_heights).insert(k, h);
                             },
-                            None => (),
+                            Err(err) => eprintln!("{}", err),
                         }
-                    } 
-                });
+                    }
+                }
             }
-        });
-
-        let heights_ready = mutex.into_inner()
-            .map_err(|_| "Failed to acquire mutex lock")?;
-
-        // let model_type_data = ModelTypeData::Texture(texture_coordinates);
-
-        let components = ModelComponents {
-            spacing,
-            heights: heights_ready,
-            colors: None,
-            texture_coordinates:    Some(texture_coordinates),
-            geopoints:              Some(geopoints),
-            texture_mapping,
-            faces:                  Some(faces),
-        };
-
-        Self::build_model(ModelType::Texture(), model_size, settings, components)
+        }
     }
 
+
     /// Creates a color model by processing tiles in parallel using threads
-    fn create_with_color(settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
+    fn create(model_type: ModelType, settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -295,13 +253,20 @@ pub trait Model<'a> {
         let model_size = Self::make_valid_model_size(settings.model_size);
         let spacing = Self::define_spacing(model_size);
 
-        let ModelData(geopoints, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
-        let geopoints_tiles = Self::create_geopoints_tiles(&opts, &geopoints);
+        let ModelData(vertices, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
+        let vertices_tiles = Self::create_vertices_tiles(&opts, &vertices);
+
+        let texture_coordinates = 
+            match model_type {
+                ModelType::Texture =>
+                    Some(Self::create_texture_coordinates(model_size)),
+                ModelType::Color => None,
+            };
 
         let mut heights: Heights = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
+        for k in 0..Self::num_model_vertices(model_size, &vertices) {
             // Default height is sea level
-            assert_eq!(heights.insert(k, opts.get_sea_level() as Height), None)
+            heights.insert(k, opts.get_sea_level() as Height);
         }
 
         let color_profile_file =
@@ -321,7 +286,7 @@ pub trait Model<'a> {
                 return Err(format!("Can't get default color from color profile file '{}': {}", &color_profile_file, err).into())
         };
         let mut colors: Colors = BTreeMap::new();
-        for k in 0..Self::num_model_vertices(model_size, &geopoints) {
+        for k in 0..Self::num_model_vertices(model_size, &vertices) {
             colors.insert(k, default_color);
         };
 
@@ -340,27 +305,37 @@ pub trait Model<'a> {
                     while let Some(tile_id) = TileID::next(tiles_limit) {
                         let mut tile_heights: Heights = BTreeMap::new();
                         let mut tile_colors: Colors = BTreeMap::new();
-                        match geopoints_tiles.get(&tile_id) {
-                            Some(tile_geopoints) => {
+                        match vertices_tiles.get(&tile_id) {
+                            Some(tile_vertices) => {
                                 let load_result =
                                     load_tile_data(&settings.data_source_dir, data_source_name, &opts, &tile_id);
                                 match load_result {
                                     Err(err) => eprintln!("{}", err),
                                     Ok(None) => (),
                                     Ok(Some(dem_tile)) => {
-                                        for (k, geo_point) in tile_geopoints {
-                                            match dem_tile.calc_height(geo_point) {
-                                                None => (), // Geo point not in the tile
-                                                Some(h) => {
-                                                    match color_mapping(h.floor() as HeightInt) {
-                                                        Ok(c) => {
-                                                            tile_colors.insert(*k, c);
-                                                            tile_heights.insert(*k, h);
-                                                        },
-                                                        Err(err) => eprintln!("{}", err),
-                                                    };
-                                                }
-                                            }
+                                        Self::calc();
+                                        for (k, geo_point) in tile_vertices {
+                                            let h_res = dem_tile.calc_height(geo_point); 
+                                            Self::calc1(model_type, color_mapping, &mut tile_heights, &mut tile_colors, h_res, *k);
+                                            // match dem_tile.calc_height(geo_point) {
+                                    //             None => (), // Geopoint not in the tile
+                                    //             Some(h) => {
+                                    //                 match model_type {
+                                    //                     ModelType::Texture => {
+                                    //                         tile_heights.insert(*k, h);
+                                    //                     },
+                                    //                     ModelType::Color => {
+                                    //                         match color_mapping(h.floor() as HeightInt) {
+                                    //                             Ok(c) => {
+                                    //                                 tile_colors.insert(*k, c);
+                                    //                                 tile_heights.insert(*k, h);
+                                    //                             },
+                                    //                             Err(err) => eprintln!("{}", err),
+                                    //                         }
+                                    //                     }
+                                    //                 }
+                                    //             }
+                                            // }
                                         }
                                         let mut ms = mutex.lock().unwrap();
                                         let MutexStruct {heights, colors } = ms.deref_mut();
@@ -369,7 +344,6 @@ pub trait Model<'a> {
                                         drop(ms);
                                     }
                                 }
-
                             },
                             None => (),
                         };
@@ -384,19 +358,17 @@ pub trait Model<'a> {
         } = mutex.into_inner()
             .map_err(|_| "Failed to acquire mutex lock")?;
 
-        // let model_type_data = ModelTypeData::Color(colors_);
-
         let components = ModelComponents {
             spacing,
             heights: heights_ready,
-            colors:                 Some(colors_),
-            texture_coordinates:    None,
-            geopoints:              Some(geopoints),
+            colors: Some(colors_),
+            texture_coordinates,
+            vertices: Some(vertices),
             texture_mapping,
-            faces:                  Some(faces),
+            faces: Some(faces),
         };
 
-        Self::build_model(ModelType::Color(), model_size, settings, components)
+        Self::build_model(model_type, model_size, settings, components)
     }
 
     /// Saves the model data to output files

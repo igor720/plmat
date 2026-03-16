@@ -112,13 +112,13 @@ impl<'a> Model<'a> for Obj<'a> {
         180.0/(model_size as Coord)
     }
 
-    /// Creates all geographic points (geopoints) for the model
+    /// Creates all geographic points (vertices) for the model
     /// 
     /// Generates a grid of geographic points covering the entire globe.
     /// The points are arranged in a specific pattern to create the 3D surface.
     fn create_modelpoints(model_size: GeoPointIndex, j_spacing: Coord) -> ModelData {
         let gnn = model_size/2 as GeoPointIndex;
-        let mut geopoints: GeoPoints = BTreeMap::new();
+        let mut vertices: Vertices = BTreeMap::new();
         let mut texture_points: PointsMapping = HashMap::new();
         let mut faces: Faces = Vec::with_capacity(4*(gnn as usize)*(gnn as usize)+2*(gnn as usize)+1);
 
@@ -127,7 +127,7 @@ impl<'a> Model<'a> for Obj<'a> {
 
         // equator points
         for i in 0..4*gnn {
-            geopoints.insert(point_index_r, GeoPoint {
+            vertices.insert(point_index_r, GeoPoint {
                 lon: -180.0 + j_spacing*i as Coord,
                 lat: 0.0
             });
@@ -146,7 +146,7 @@ impl<'a> Model<'a> for Obj<'a> {
             let i_spacing = 360.0/(i_len as Coord);
             for i in 0..i_len {
                 // north: odd indices
-                geopoints.insert(point_index_r, GeoPoint {
+                vertices.insert(point_index_r, GeoPoint {
                     lon: -180.0 + i_spacing*i as Coord,
                     lat: j_spacing*j as Coord
                 });
@@ -154,7 +154,7 @@ impl<'a> Model<'a> for Obj<'a> {
                 point_index_r += 1;
                 point_index_t += 1;
                 // south: even indices
-                geopoints.insert(point_index_r, GeoPoint {
+                vertices.insert(point_index_r, GeoPoint {
                     lon: -180.0 + i_spacing*i as Coord,
                     lat: -j_spacing*j as Coord
                 });
@@ -169,14 +169,14 @@ impl<'a> Model<'a> for Obj<'a> {
         }
 
         // north and south poles points
-        geopoints.insert(point_index_r, GeoPoint {
+        vertices.insert(point_index_r, GeoPoint {
             lon: 0.0,
             lat: 90.0
         });
         texture_points.insert(point_index_t, point_index_r);
         point_index_r += 1;
         point_index_t += 1;
-        geopoints.insert(point_index_r, GeoPoint {
+        vertices.insert(point_index_r, GeoPoint {
             lon: 0.0,
             lat: -90.0
         });
@@ -242,7 +242,7 @@ impl<'a> Model<'a> for Obj<'a> {
             }
         }
 
-        ModelData::create( geopoints, faces, Some(texture_points) )
+        ModelData::create( vertices, faces, Some(texture_points) )
     }
 
     /// Creates texture coordinates data
@@ -349,7 +349,7 @@ impl<'a> Model<'a> for Obj<'a> {
         // mtl file
         let create_mtl = || -> Result<(), ErrBox> {
             let mut data = match &self.model_type {
-                ModelType::Color() if self.color_precision==0 =>
+                ModelType::Color if self.color_precision==0 =>
                     String::with_capacity(2*22 * (self.color_precision+1) as usize * (self.color_precision+1) as usize),
                 _ => String::with_capacity(2000),
                 };
@@ -372,14 +372,14 @@ impl<'a> Model<'a> for Obj<'a> {
             let mut br = BufReader::new(f_tmpl);
             br.read_to_string(&mut data)
                 .map_err(|err| {format!("Can't read mtl template file {}: {}", &self.template_file_mtl, err)})?;
-            if let ModelType::Texture() = &self.model_type {
+            if let ModelType::Texture = &self.model_type {
                 data.push_str(&format!("map_Kd {}\n", self.texture_uri))
             }
             data.push_str("\n");
             f_mtl.write_all(data.as_bytes())
                 .map_err(|err| {format!("Can't write to mtl file {}: {}", &mtl_path, err)})?;
 
-            if let ModelType::Color() = &self.model_type {
+            if let ModelType::Color = &self.model_type {
                 if self.color_precision!=0 {
                     let interval = get_color_interval(self.color_precision);
                     for r_k in 0..=self.color_precision {
@@ -403,11 +403,11 @@ impl<'a> Model<'a> for Obj<'a> {
         // obj file
         let create_obj = || -> Result<(), ErrBox> {
             let mut data = match &self.model_type {
-                ModelType::Color() if self.color_precision==0 =>
+                ModelType::Color if self.color_precision==0 =>
                     String::with_capacity((3*(FRACTION_LENGHT+4+6)+1)*WRITER_BUF_STRINGS),
-                ModelType::Color() =>
+                ModelType::Color =>
                     String::with_capacity((2*3*(FRACTION_LENGHT+4)+1)*WRITER_BUF_STRINGS),
-                ModelType::Texture() =>
+                ModelType::Texture =>
                     String::with_capacity((3*(FRACTION_LENGHT+4)+1)*WRITER_BUF_STRINGS),
                 };
 
@@ -437,7 +437,7 @@ impl<'a> Model<'a> for Obj<'a> {
 
             // vertices
             data.clear();
-            let gps = &self.components.get_geopoints()?;
+            let gps = &self.components.get_vertices()?;
             let mut vertex_count = 0;
             for (i, gp) in gps.iter() {
                 let GeoPoint {lon, lat} = *gp;
@@ -447,7 +447,7 @@ impl<'a> Model<'a> for Obj<'a> {
                 };
                 let (x, y, z) = calc_point3d(self.radius, self.scale, height, lon, lat);
                 match &self.model_type {
-                    ModelType::Color() if self.color_precision==0 => {
+                    ModelType::Color if self.color_precision==0 => {
                         let rgb = self.components.get_colors()?.get(i).ok_or(
                             format!("Missed color for point {}", i)
                         )?;
@@ -470,7 +470,7 @@ impl<'a> Model<'a> for Obj<'a> {
                 .map_err(|err| {format!("Can't write vertices to obj file {}: {}", &result_path, err)})?;
 
             // texture coordinates
-            if let ModelType::Texture() = &self.model_type {
+            if let ModelType::Texture = &self.model_type {
                 data.clear();
                 let mut coord_count = 0;
                 let texture_coordinates = self.components.get_texture_coordinates()?;
@@ -514,11 +514,11 @@ impl<'a> Model<'a> for Obj<'a> {
                 };
 
                 match &self.model_type {
-                    ModelType::Texture() =>
+                    ModelType::Texture =>
                         data.push_str(format!("f {}/{} {}/{} {}/{}\n", vt0+1, tvt0+1, vt1+1, tvt1+1, vt2+1, tvt2+1).as_str()),
-                    ModelType::Color() if self.color_precision==0 =>
+                    ModelType::Color if self.color_precision==0 =>
                         data.push_str(format!("f {} {} {}\n", vt0+1, vt1+1, vt2+1).as_str()),
-                    ModelType::Color() => {
+                    ModelType::Color => {
                         let color = self.components.get_colors()?.get(vt0).ok_or(
                             format!("Missed color for vertex {}", vt0)
                         )?;
@@ -559,16 +559,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_geopoints_t0() {
+    fn create_vertices_t0() {
         let model_size = Obj::make_valid_model_size(Some(3));
         let j_spacing = Obj::define_spacing(model_size);
-        let ModelData (geopoints, elms, texture_mapping) =
+        let ModelData (vertices, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
-        // println!("{:?}", geopoints);
+        // println!("{:?}", vertices);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);
-        assert_eq!(geopoints.len(), 6);
+        assert_eq!(vertices.len(), 6);
         assert_eq!(pmap.len(), 7);
         let elms_res = [
             (0, 1, 5), (1, 0, 6), (1, 2, 5), (2, 1, 6),
@@ -579,16 +579,16 @@ mod tests {
     }
 
     #[test]
-    fn create_geopoints_t1() {
+    fn create_vertices_t1() {
         let model_size = Obj::make_valid_model_size(Some(4));
         let j_spacing = Obj::define_spacing(model_size);
-        let ModelData (geopoints, elms, texture_mapping) =
+        let ModelData (vertices, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
-        // println!("{:?}", geopoints);
+        // println!("{:?}", vertices);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);
-        assert_eq!(geopoints.len(), 18);
+        assert_eq!(vertices.len(), 18);
         assert_eq!(pmap.len(), 21);
         let elms_res = [
             (0, 1, 9), (1, 0, 10), (1, 2, 11), (2, 1, 12), (1, 11, 9),
@@ -603,16 +603,16 @@ mod tests {
     }
 
     #[test]
-    fn create_geopoints_t2() {
+    fn create_vertices_t2() {
         let model_size = Obj::make_valid_model_size(Some(8));
         let j_spacing = Obj::define_spacing(model_size);
-        let ModelData (geopoints, elms, texture_mapping) =
+        let ModelData (vertices, elms, texture_mapping) =
                 Obj::create_modelpoints(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
-        // println!("{:?}", geopoints);
+        // println!("{:?}", vertices);
         // println!("{:?}", pmap);
         // println!("{:?}", elms);
-        assert_eq!(geopoints.len(), 66);
+        assert_eq!(vertices.len(), 66);
         assert_eq!(pmap.len(), 73);
         let elms_res = [
             (0, 1, 17), (1, 0, 18), (1, 2, 19), (2, 1, 20), (1, 19, 17), (1, 18, 20), (2, 3, 21),
