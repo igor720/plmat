@@ -7,7 +7,7 @@
 use std::fs::read_to_string;
 use yaml_rust2::{Yaml, YamlLoader};
 use num_traits::FromPrimitive;
-
+use std::path::Path;
 use crate::common::types::*;
 use crate::common::util::*;
 use crate::common::args::*;
@@ -34,9 +34,9 @@ pub struct Settings<'a> {
     /// Type of data source being used
     pub data_source: DataSourceName,
     /// Directory path where source data tiles are located
-    pub data_source_dir: String,
+    pub data_source_dir: &'a Path,
     /// Directory path where output files will be written
-    pub output_dir: String,
+    pub output_dir: &'a Path,
     /// Value representing no data in the elevation data
     pub nodata: Option<HeightInt>,
     /// Default sea level for the model
@@ -85,11 +85,12 @@ impl<'a> Settings<'a> {
             let nodata = y_ds["data_source_path"].as_i64().map(|i| {i as HeightInt});
             let sea_level = y_ds["sea_level"].as_i64().map(|i| {i as HeightInt});
 
-            let data_source_dir = args.data_source_dir()
+            let data_source_dir = Path::new(
+                    args.data_source_dir()
                     .map(|s| {s.as_str()})
                     .or_else(|| {y_ds["data_source_path"].as_str()})
                     .unwrap_or(DEFAULT_DATA_SOURCE_DIR)
-                    .to_string();
+                );
             check_dir(&data_source_dir)?;
 
             let y0 = &settings["Model"][model_name]["Common"];
@@ -105,7 +106,8 @@ impl<'a> Settings<'a> {
                 return Err(format!("The model type section for '{}' is missed in settings file", model_name).into())
             };
 
-            let output_dir = args.output_dir()
+            let output_dir = Path::new(
+                    args.output_dir()
                     .map(|s| {s.as_str()})
                     .or_else(|| {
                         if y1["output_dir"].is_badvalue() {
@@ -115,7 +117,7 @@ impl<'a> Settings<'a> {
                         }
                     })
                     .unwrap_or(DEFAULT_OUTPUT_DIR)
-                    .to_string();
+                );
             check_dir(&output_dir)?;
 
             Ok(Settings{
@@ -173,14 +175,14 @@ impl<'a> Settings<'a> {
     }
 
     /// Returns string type parameter value
-    pub fn get_parameter_str(&'a self, parameter: &str, default: String) -> Result<String, ErrBox> {
+    pub fn get_parameter_str(&'a self, parameter: &str, default: &str) -> Result<String, ErrBox> {
         match self.get_parameter_yaml(parameter) {
             Ok(y) =>
                 return match y {
                     Yaml::String(s) => Ok(s.to_string()),
                     _ => Err(format!("'{}' parameter must have string type in the settings file", parameter).into()),
                 },
-            Err(_) => Ok(default),
+            Err(_) => Ok(default.to_string()),
         }
     }
 }
@@ -242,17 +244,17 @@ mod tests {
         let settings = Settings::make_settings(&tl_command, &yaml[0]).unwrap();
         assert_eq!(settings.get_parameter_num("jobs", 4).unwrap(), 4);
         assert_eq!(
-            settings.get_parameter_str("output_dir", "***".to_string()).unwrap(), 
+            settings.get_parameter_str("output_dir", "***").unwrap(), 
             "./".to_string()
         );
         // from cmd args
         assert_eq!(
-            settings.data_source_dir, 
-            "./".to_string()
+            settings.data_source_dir.to_str(), 
+            Some("./")
         );
         // from settings file
         assert_eq!(
-            settings.get_parameter_str("data_source_dir", "***".to_string()).unwrap(), 
+            settings.get_parameter_str("data_source_dir", "***").unwrap(), 
             "./some-dir".to_string()
         );
     }
@@ -267,14 +269,14 @@ mod tests {
             model_size: None,
             jobs: 4,
             data_source: DataSourceName::DemArcSec3,
-            data_source_dir: DEFAULT_DATA_SOURCE_DIR.to_string(),
-            output_dir: DEFAULT_OUTPUT_DIR.to_string(),
+            data_source_dir: Path::new(DEFAULT_DATA_SOURCE_DIR),
+            output_dir: Path::new(DEFAULT_OUTPUT_DIR),
             nodata: None,
             sea_level: None,
             common: &yaml[0],
             specific: &yaml[0]["Model"]["X3DGeospatial"],
         };
         assert_eq!(settings.get_parameter_num("unknown_param", 123).unwrap(), 123);
-        assert_eq!(settings.get_parameter_str("unknown_param", "123".to_string()).unwrap(), "123".to_string());
+        assert_eq!(settings.get_parameter_str("unknown_param", "123").unwrap(), "123".to_string());
     }
 }

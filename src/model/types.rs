@@ -41,9 +41,10 @@
 //! 4. Tile mapping and distribution
 //! 5. Parallel tile data loading and processing
 //! 6. Model construction and output generation
+
 use std::collections::HashMap;
 use std::collections::BTreeMap;
-// use std::path::Components;
+use std::path::Path;
 use std::thread;
 use std::sync::{Mutex};
 use std::ops::DerefMut;
@@ -56,15 +57,6 @@ use crate::input::dem::*;
 
 /// Default path for color profile file
 const DEFAULT_COLOR_PROFILE_FILE: &str = "./color_profile";
-
-/// Enum representing model type specific data
-// #[derive(Debug)]
-// pub enum ModelType {
-//     /// Color type model
-//     Color(),
-//     /// Texture type model
-//     Texture(),
-// }
 
 pub struct ModelComponents {
     /// Spacing between vertices in the grid
@@ -148,13 +140,18 @@ pub fn make_data_source_opts(nodata: Option<HeightInt>, sea_level: Option<Height
 }
 
 /// Loads and returns tile data for a specific data source and tile ID
-pub fn load_tile_data<'a>(data_source_path: &str, data_source_name: &DataSourceName, opts: &'a dyn DataSourceOpts,
+pub fn load_tile_data<'a>(data_source_path: &Path, data_source_name: &DataSourceName, opts: &'a dyn DataSourceOpts,
         tile_id: &'a TileID) -> Result<Option<impl TileData<'a>>, String> {
 
     match data_source_name {
         DataSourceName::DemArcSec3 =>
             arcsec3::DemArc3SecData::load(data_source_path, opts, &tile_id)
     }
+}
+
+pub struct MutexStruct {
+    heights: Heights,
+    colors: Colors,
 }
 
 /// Trait defining the interface for model creation and management
@@ -211,41 +208,145 @@ pub trait Model<'a> {
         components:             ModelComponents,
     ) -> Result<Self, ErrBox> where Self:Sized;
 
-    fn calc() {}
-
-
-    fn calc1(
+    /// Do calculations of model vertices for a given tile
+    /// 
+    /// This function processes elevation data for a specific DEM tile and updates
+    /// the model's height and color information for vertices that fall within this tile.
+    /// It handles both texture and color model types by either storing elevation values
+    /// directly (for texture models) or mapping elevation values to colors (for color models).
+    /// 
+    /// # Arguments
+    /// * `model_type` - The type of model being created (Texture or Color)
+    /// * `settings` - Configuration settings for the model creation process
+    /// * `data_source_name` - The name of the data source being used (e.g., SRTM 3-arcsecond)
+    /// * `opts` - Data source options for the current processing context
+    /// * `color_mapping` - Color mapping object used to convert elevation values to colors
+    /// * `tile_id` - Identifier for the DEM tile being processed
+    /// * `tile_vertices` - Vector of vertex indices and geographic points that fall within this tile
+    /// * `mutex` - Thread-safe mutex protecting shared model data (heights and colors)
+    /// * `tile_heights` - Mutable reference to store height values for vertices in this tile
+    /// * `tile_colors` - Mutable reference to store color values for vertices in this tile
+    /// 
+    /// # Processing Flow
+    /// 1. Loads the DEM tile data for the given tile_id
+    /// 2. For each vertex in the tile:
+    ///    - Calculates the elevation value at that geographic point
+    ///    - For texture models: stores the elevation value directly
+    ///    - For color models: converts elevation to color using the color mapping
+    /// 3. Updates the shared model data through the mutex
+    /// 
+    /// # Error Handling
+    /// - If tile loading fails, an error message is printed to stderr
+    /// - If elevation calculation fails, the vertex is skipped
+    /// - If color mapping fails for color models, an error message is printed to stderr
+    /// 
+    /// # Thread Safety
+    /// This function is designed to be called from multiple threads in parallel.
+    /// It uses a mutex to safely update shared model data structures.
+    fn calc_for_tile(
             model_type: ModelType,
-            color_mapping: impl Fn(HeightInt) -> Result<RGB, ErrBox>,
+            settings: &Settings, 
+            data_source_name: &DataSourceName, 
+            opts: &impl DataSourceOpts, 
+            color_mapping: &ColorMapping,
+            tile_id: TileID,
+            tile_vertices: &Vec<(usize, &GeoPoint)>,
+            mutex: &Mutex<MutexStruct>,
             tile_heights: &mut Heights, 
             tile_colors: &mut Colors, 
-            h_res: Option<Height>,
-            k: usize
         ) {
-        match h_res {
-            None => (), // Geopoint not in the tile
-            Some(h) => {
-                match model_type {
-                    ModelType::Texture => {
-                        (*tile_heights).insert(k, h);
-                    },
-                    ModelType::Color => {
-                        match color_mapping(h.floor() as HeightInt) {
-                            Ok(c) => {
-                                (*tile_colors).insert(k, c);
-                                (*tile_heights).insert(k, h);
-                            },
-                            Err(err) => eprintln!("{}", err),
+        let load_result =
+            load_tile_data(&settings.data_source_dir, &data_source_name, opts, &tile_id);
+        match load_result {
+            Err(err) => eprintln!("{}", err),
+            Ok(None) => (), // Missed data for this tile: default elevations and colors
+            Ok(Some(dem_tile)) => {
+                for (k, geo_point) in tile_vertices {
+                    match dem_tile.calc_height(geo_point) {
+                        None => (), // Geopoint is not in the tile
+                        Some(h) => {
+                            match model_type {
+                                ModelType::Texture => {
+                                    (*tile_heights).insert(*k, h);
+                                },
+                                ModelType::Color => {
+                                    match color_mapping.get_color(h.floor() as HeightInt) {
+                                        Ok(c) => {
+                                            (*tile_colors).insert(*k, c);
+                                            (*tile_heights).insert(*k, h);
+                                        },
+                                        Err(err) => eprintln!("{}", err),
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+                let mut ms = mutex.lock().unwrap();
+                let MutexStruct {heights, colors } = ms.deref_mut();
+                heights.append(tile_heights);
+                colors.append(tile_colors);
+                drop(ms);
             }
-        }
+        } 
     }
 
-
-    /// Creates a color model by processing tiles in parallel using threads
+    /// Creates a model by processing tiles in parallel using threads
+    /// 
+    /// This is the main entry point for model creation that orchestrates the complete
+    /// workflow of generating 3D models from DEM data. It handles configuration validation,
+    /// model point generation, tile distribution, parallel processing of DEM tiles, and
+    /// final model construction.
+    /// 
+    /// # Arguments
+    /// * `model_type` - The type of model to create (Texture or Color)
+    /// * `settings` - Configuration settings for the model creation process
+    /// 
+    /// # Processing Workflow
+    /// 1. **Configuration Validation**: Validates that required files and directories exist
+    ///    using the `options_check` method
+    /// 2. **Model Size and Spacing Calculation**: Determines the appropriate model size and
+    ///    vertex spacing based on input parameters
+    /// 3. **Model Point Generation**: Creates the geographic points and triangular faces that
+    ///    define the 3D model structure
+    /// 4. **Tile Mapping**: Associates geographic points with DEM tiles for efficient processing
+    /// 5. **Parallel Tile Processing**: Distributes tile processing across multiple threads:
+    ///    - Each thread processes tiles in a work-stealing pattern
+    ///    - For each tile, loads DEM data and calculates elevation values for vertices
+    ///    - Updates shared model data structures through thread-safe mutex operations
+    /// 6. **Model Construction**: Builds the final model using the `build_model` method
+    /// 
+    /// # Thread Safety
+    /// The function uses a `Mutex` to protect shared model data structures (heights and colors)
+    /// during parallel processing. Each thread processes its assigned tiles independently,
+    /// but safely updates the shared data through the mutex.
+    /// 
+    /// # Error Handling
+    /// - Configuration validation errors are propagated as `ErrBox` results
+    /// - Tile loading failures are logged to stderr but don't stop processing
+    /// - Elevation calculation failures skip individual vertices
+    /// - Color mapping failures are logged to stderr but don't stop processing
+    /// - Mutex acquisition failures are converted to `ErrBox` results
+    /// 
+    /// # Performance Considerations
+    /// - Uses multi-threading to parallelize tile processing across available CPU cores
+    /// - Implements work-stealing pattern for efficient load balancing
+    /// - Minimizes data copying by using references and mutable borrows
+    /// - Processes tiles in batches to reduce thread synchronization overhead
+    /// 
+    /// # Data Flow
+    /// 1. Initial configuration and model setup
+    /// 2. Generation of geographic points and triangular faces
+    /// 3. Distribution of points to tiles for processing
+    /// 4. Parallel processing of tiles with elevation/color calculations
+    /// 5. Aggregation of results from all threads into final model data
+    /// 6. Final model construction and return
+    /// 
+    /// # Panics
+    /// This function will panic if:
+    /// - Mutex lock acquisition fails (indicating a serious system error)
     fn create(model_type: ModelType, settings: &'a Settings) -> Result<Self, ErrBox> where Self:Sized {
+        // Check here before long calculation times
         Self::options_check(settings)?;
         let data_source_name = &settings.data_source;
         let opts = make_data_source_opts(settings.nodata, settings.sea_level, data_source_name);
@@ -265,26 +366,25 @@ pub trait Model<'a> {
 
         let mut heights: Heights = BTreeMap::new();
         for k in 0..Self::num_model_vertices(model_size, &vertices) {
-            // Default height is sea level
+            // The default height is the sea level
             heights.insert(k, opts.get_sea_level() as Height);
         }
 
         let color_profile_file =
-                settings.get_parameter_str("color_profile_file", DEFAULT_COLOR_PROFILE_FILE.to_string())?;
+                settings.get_parameter_str("color_profile_file", DEFAULT_COLOR_PROFILE_FILE)?;
 
         let color_mapping =
-                match get_color_mapping(&color_profile_file) {
-                    Err(err) =>
-                        return Err(format!("Can't find color profile file '{}': {}", &color_profile_file, err).into()),
-                    Ok(func) => func
-                };
+                ColorMapping::create(Path::new(&color_profile_file))
+                .map_err(|err| {
+                    format!("Can't create color mapping from file '{}': {}", &color_profile_file, err)
+                })?;
 
         // Fill 'colors' with default color
-        let default_color = match color_mapping(opts.get_sea_level()) { // the default color is the color of sea level
-            Ok(c) => c,
-            Err(err) =>
-                return Err(format!("Can't get default color from color profile file '{}': {}", &color_profile_file, err).into())
-        };
+        // The default color is the color of sea level
+        let default_color = color_mapping.get_color(opts.get_sea_level())
+                .map_err(|err| {
+                    format!("Can't get default color from color profile file '{}': {}", &color_profile_file, err)
+                })?;
         let mut colors: Colors = BTreeMap::new();
         for k in 0..Self::num_model_vertices(model_size, &vertices) {
             colors.insert(k, default_color);
@@ -292,11 +392,6 @@ pub trait Model<'a> {
 
         let tiles_limit=opts.get_max_number_of_tiles();
 
-        /// Struct for passing data to mutex for thread-safe operations
-        struct MutexStruct {
-            heights: Heights,
-            colors: Colors,
-        }
         let mutex=Mutex::new(MutexStruct {heights: heights, colors: colors});
 
         thread::scope(|scope|{
@@ -307,43 +402,18 @@ pub trait Model<'a> {
                         let mut tile_colors: Colors = BTreeMap::new();
                         match vertices_tiles.get(&tile_id) {
                             Some(tile_vertices) => {
-                                let load_result =
-                                    load_tile_data(&settings.data_source_dir, data_source_name, &opts, &tile_id);
-                                match load_result {
-                                    Err(err) => eprintln!("{}", err),
-                                    Ok(None) => (),
-                                    Ok(Some(dem_tile)) => {
-                                        Self::calc();
-                                        for (k, geo_point) in tile_vertices {
-                                            let h_res = dem_tile.calc_height(geo_point); 
-                                            Self::calc1(model_type, color_mapping, &mut tile_heights, &mut tile_colors, h_res, *k);
-                                            // match dem_tile.calc_height(geo_point) {
-                                    //             None => (), // Geopoint not in the tile
-                                    //             Some(h) => {
-                                    //                 match model_type {
-                                    //                     ModelType::Texture => {
-                                    //                         tile_heights.insert(*k, h);
-                                    //                     },
-                                    //                     ModelType::Color => {
-                                    //                         match color_mapping(h.floor() as HeightInt) {
-                                    //                             Ok(c) => {
-                                    //                                 tile_colors.insert(*k, c);
-                                    //                                 tile_heights.insert(*k, h);
-                                    //                             },
-                                    //                             Err(err) => eprintln!("{}", err),
-                                    //                         }
-                                    //                     }
-                                    //                 }
-                                    //             }
-                                            // }
-                                        }
-                                        let mut ms = mutex.lock().unwrap();
-                                        let MutexStruct {heights, colors } = ms.deref_mut();
-                                        heights.append(&mut tile_heights);
-                                        colors.append(&mut tile_colors);
-                                        drop(ms);
-                                    }
-                                }
+                                Self::calc_for_tile(
+                                    model_type,
+                                    settings, 
+                                    data_source_name,
+                                    &opts, 
+                                    &color_mapping,
+                                    tile_id,
+                                    tile_vertices,
+                                    &mutex,
+                                    &mut tile_heights, 
+                                    &mut tile_colors, 
+                                )
                             },
                             None => (),
                         };
@@ -356,7 +426,7 @@ pub trait Model<'a> {
             heights: heights_ready,
             colors: colors_,
         } = mutex.into_inner()
-            .map_err(|_| "Failed to acquire mutex lock")?;
+            .map_err(|err| format!("Failed to acquire mutex lock: {}", err))?;
 
         let components = ModelComponents {
             spacing,

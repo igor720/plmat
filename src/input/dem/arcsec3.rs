@@ -183,7 +183,7 @@ impl<'a> TileData<'a> for DemArc3SecData<'a> {
     /// - Some(DemArc3SecData) with the loaded tile data
     /// - None if the tile file doesn't exist
     /// - Error if file reading or validation fails
-    fn load<'b: 'a>(dir_path: &str, tile_opts: &'b dyn DataSourceOpts, tile_id: &TileID)
+    fn load<'b: 'a>(dir_path: &Path, tile_opts: &'b dyn DataSourceOpts, tile_id: &TileID)
         -> Result<Option<Self>, String> where Self:Sized {
 
         let TileID {lon, lat} = *tile_id;

@@ -35,6 +35,7 @@
 //! - Loading tiles from disk
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt;
+use std::path::Path;
 use crate::common::types::*;
 
 // Static only, not const
@@ -154,7 +155,7 @@ pub trait TileData<'a> {
     /// 
     /// This static method loads a tile from disk using the provided directory
     /// path and data source options.
-    fn load<'b: 'a>(dir_path: &str, opts: &'b dyn DataSourceOpts, tile_id: &TileID)
+    fn load<'b: 'a>(dir_path: &Path, opts: &'b dyn DataSourceOpts, tile_id: &TileID)
         -> Result<Option<Self>, String> where Self: Sized;
 }
 

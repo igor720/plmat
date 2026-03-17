@@ -42,28 +42,26 @@ pub fn calc_point3d(radius: Height, scale: Height, height: Height, lon: Coord, l
 }
 
 /// Check validity of directory path specification
-pub fn check_dir(value: &String) -> Result<(), ErrBox> {
-    let p = Path::new(&value);
+pub fn check_dir(p: &Path) -> Result<(), ErrBox> {
     if p.exists() && p.is_dir() {
         match p.to_str() {
             Some(_) => Ok(()),
-            None => Err(format!("Invalid path: {}", value).into())
+            None => Err(format!("Invalid path: {:?}", p).into())
         }
     } else {
-        Err(format!("Directory path is invalid or can't be read: {}", value).into())
+        Err(format!("Directory path is invalid or can't be read: {:?}", p).into())
     }
 }
 
 /// Check validity of file path specification
-pub fn check_file(value: &String) -> Result<(), ErrBox> {
-    let p = Path::new(&value);
+pub fn check_file(p: &Path) -> Result<(), ErrBox> {
     if p.exists() && p.is_file() {
         match p.to_str() {
             Some(_) => Ok(()),
-            None => Err(format!("Invalid file: {}", value).into())
+            None => Err(format!("Invalid file: {:?}", p).into())
         }
     } else {
-        Err(format!("File path is invalid or can't be read: {}", value).into())
+        Err(format!("File path is invalid or can't be read: {:?}", p).into())
     }
 }
 

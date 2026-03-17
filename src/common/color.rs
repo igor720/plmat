@@ -19,22 +19,18 @@
 //! ```text
 //! <elevation> <red> <green> <blue>
 //! ```
-//! 
 //! Where:
 //! - Elevation is a non-negative integer
 //! - RGB components are floating-point values between 0.0 and 1.0
-//! 
-//! Lines starting with '#' are treated as comments and ignored.
 use std::fmt;
 use std::fs::read_to_string;
 use std::collections::HashMap;
+use std::path::Path;
 use regex::Regex;
-
 use crate::common::types::*;
 
 
 const DEFAULT_COLOR: RGB = RGB (0.5, 0.5, 0.5);
-
 
 /// Color component type for RGB values
 /// 
@@ -63,6 +59,12 @@ impl fmt::Display for RGB {
     }
 }
 
+/// Color profile file content type
+/// 
+/// Represents the content of a color profile file as a vector of strings,
+/// where each string corresponds to a line in the file.
+type ColorProfileFileContent = Vec<String>;
+
 /// Integer precision type for defining colors
 /// 
 /// Used to specify the precision level for color quantization, typically
@@ -74,20 +76,6 @@ pub type ColorPrecision = u16;
 /// Represents a color position as three discrete values (r, g, b) that define
 /// a position in the RGB color space. Each component is a ColorPrecision value.
 pub type ColorPosition = (ColorPrecision, ColorPrecision, ColorPrecision);
-
-/// Elevation to RGB Color mapping
-/// 
-/// A HashMap that maps elevation values (HeightInt) to RGB colors.
-/// Used to determine what color should be displayed for a given elevation.
-pub type ColorMappning = HashMap<HeightInt, RGB>;
-
-/// Color profile file content type
-/// 
-/// Represents the content of a color profile file as a vector of strings,
-/// where each string corresponds to a line in the file.
-type ColorProfileFileContent = Vec<String>;
-
-// type ColorMappingFunction = impl Fn(HeightInt) -> Result<RGB, ErrBox>;
 
 /// Color profile record
 /// 
@@ -107,7 +95,7 @@ struct ColorRecord (
 /// Read color profile file lines into a vector
 /// 
 /// Reads the entire content of a color profile file and splits it into lines.
-fn read_lines(filepath: &str) -> Result<ColorProfileFileContent, ErrBox> {
+fn read_lines(filepath: &Path) -> Result<ColorProfileFileContent, ErrBox> {
     read_to_string(filepath)
         .map(|str| {str.lines().map(String::from).collect()})
         .map_err(|err| {err.into()})
@@ -174,67 +162,96 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
     }
 }
 
-/// Build color mapping from color table
-/// 
-/// Creates a mapping from elevation values to RGB colors by interpolating
-/// between color records in the table. For heights between records, linear
-/// interpolation is used to determine the color.
-fn build_color_mapping(color_table: &Vec<ColorRecord>) -> Result<ColorMappning, ErrBox> {
-    let mut color_mapping = HashMap::new();
-
-    let ColorRecord (hl, rl, gl, bl) = &color_table.last()
-        .ok_or_else(|| -> ErrBox { "Color table is empty".into() })?;
-    color_mapping.insert(*hl, RGB (*rl, *gl, *bl));    // biggest height
-
-    let mut color_table_copy = color_table.clone();
-    color_table_copy.remove(0);
-
-    let color_table_bounds = color_table.into_iter().zip(color_table_copy);
-
-    for (
-        ColorRecord (h0, r0, g0, b0),
-        ColorRecord (h1, r1, g1, b1)
-    ) in color_table_bounds {
-        for h in *h0..h1 {
-            let delta_h = (h-h0) as ColorComponent;
-            let span_h = (h1-h0) as ColorComponent;
-            color_mapping.insert(h, RGB (
-                r0 + (r1-r0)*delta_h/span_h,
-                g0 + (g1-g0)*delta_h/span_h,
-                b0 + (b1-b0)*delta_h/span_h,
-            ));
-        }
-    }
-
-    return Ok(color_mapping);
+/// Struct of in-memory mapping of elevations to colors
+pub struct ColorMapping {
+    mapping: HashMap<HeightInt, RGB>,
+    first_color_record: ColorRecord,
+    last_color_record: ColorRecord,
 }
 
-/// Get color mapping function from color profile file
-/// 
-/// Creates a closure that maps elevation values to RGB colors by reading
-/// a color profile file and building an interpolation mapping.
-pub fn get_color_mapping<'a>(filepath: &'a str) -> Result<impl Fn(HeightInt) -> Result<RGB, ErrBox>, ErrBox> {
-    let file_content = read_lines(&filepath)?;
-    let color_table = build_color_table(file_content)?;
+impl ColorMapping {
+    /// Build color mapping from color table
+    /// 
+    /// Creates a mapping from elevation values to RGB colors by interpolating
+    /// between color records in the table. For heights between records, linear
+    /// interpolation is used to determine the color.
+    fn make_mapping(color_table: &Vec<ColorRecord>) -> Result<HashMap<HeightInt, RGB>, ErrBox> {
+        let mut mapping = HashMap::new();
 
-    let color_mapping = build_color_mapping(&color_table)?;
+        // Handle the last record (highest elevation)
+        let ColorRecord (hl, rl, gl, bl) = &color_table.last()
+            .ok_or_else(|| -> ErrBox { "Color table is empty".into() })?;
+        mapping.insert(*hl, RGB (*rl, *gl, *bl));    // biggest height
 
-    let ColorRecord (h0, r0, g0, b0) = color_table.first()
-            .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?
-            .clone();
-    let ColorRecord (h1, r1, g1, b1) = color_table.last()
-            .ok_or_else(|| -> ErrBox { "Can't get last element in color table".into() })?
-            .clone();
+        let mut color_table_copy = color_table.clone();
+        color_table_copy.remove(0);
 
-    Ok(move |h| {
-        match color_mapping.get(&h) {
+        let color_table_bounds = color_table.into_iter().zip(color_table_copy);
+
+        for (
+            ColorRecord (h0, r0, g0, b0),
+            ColorRecord (h1, r1, g1, b1)
+        ) in color_table_bounds {
+            for h in *h0..h1 {
+                let delta_h = (h-h0) as ColorComponent;
+                let span_h = (h1-h0) as ColorComponent;
+                mapping.insert(h, RGB (
+                    r0 + (r1-r0)*delta_h/span_h,
+                    g0 + (g1-g0)*delta_h/span_h,
+                    b0 + (b1-b0)*delta_h/span_h,
+                ));
+            }
+        }
+
+        return Ok(mapping);
+    }
+
+    /// Get color mapping function from color profile file
+    /// 
+    /// Creates a closure that maps elevation values to RGB colors by reading
+    /// a color profile file and building an interpolation mapping.
+    pub fn create(filepath: &Path) -> Result<ColorMapping, ErrBox> {
+        let file_content = read_lines(&filepath)?;
+        let color_table = build_color_table(file_content)?;
+
+        let mapping = Self::make_mapping(&color_table)?;
+        let first_color_record = color_table.first()
+                .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?
+                .clone();
+        let last_color_record = color_table.last()
+                .ok_or_else(|| -> ErrBox { "Can't get last element in color table".into() })?
+                .clone();
+
+        Ok(ColorMapping {
+            mapping: mapping,
+            first_color_record,
+            last_color_record,
+        })
+    }
+
+    /// Get color for a given elevation
+    /// 
+    /// Returns the RGB color for a given elevation value. If the elevation
+    /// is below the first record, returns the first record's color. If the
+    /// elevation is above the last record, returns the last record's color.
+    /// For intermediate elevations, returns interpolated colors from the mapping.
+    pub fn get_color(&self, h: HeightInt) -> Result<RGB, ErrBox> {
+        match self.mapping.get(&h) {
             Some(c) => Ok(*c),
             None =>
-                if h<h0 { Ok(RGB (r0, g0, b0)) }
-                else if h>h1 { Ok(RGB (r1, g1, b1)) }
-                else { Err(format!("Missing color for elevation {}", h).into()) }
+                if h<self.first_color_record.0 { Ok(RGB (
+                    self.first_color_record.1,
+                    self.first_color_record.2,
+                    self.first_color_record.3
+                )) }
+                else if h>self.last_color_record.0 { Ok(RGB (
+                    self.last_color_record.1,
+                    self.last_color_record.2,
+                    self.last_color_record.3
+                )) }
+                else { Err(format!("Missing color for the elevation {}", h).into()) }
         }
-    })
+    }
 }
 
 /// Create function to make allowed color from arbitrary color

@@ -43,7 +43,7 @@
 //! 4. Creating triangular faces connecting the vertices
 //! 5. Writing the complete OBJ file structure
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::io::{BufReader, Read};
 use std::io::{BufWriter, Write};
 use std::collections::{BTreeMap, HashMap};
@@ -82,8 +82,8 @@ pub struct Obj<'a> {
     color_precision:    ColorPrecision,
     texture_uri:        String,
     components:         ModelComponents,
-    template_file_mtl:  String,
-    template_file_obj:  String,
+    template_file_mtl:  PathBuf,
+    template_file_obj:  PathBuf,
 }
 
 impl<'a> Model<'a> for Obj<'a> {
@@ -299,12 +299,13 @@ impl<'a> Model<'a> for Obj<'a> {
     /// Validates that the OBJ and MTL template files exist and are accessible.
     /// This is necessary for generating the final output files.
     fn options_check(settings: &'a Settings) -> Result<(), ErrBox> {
-        let template_file_obj =
-                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
-        check_file(&template_file_obj)?;
-        let template_file_mtl =
-                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
-        check_file(&template_file_mtl)
+        let str = settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ)?;
+        let template_file_obj = Path::new(&str);
+        check_file(template_file_obj)?;
+
+        let str = settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL)?;
+        let template_file_mtl = Path::new(&str);
+        check_file(template_file_mtl)
     }
 
     fn build_model(
@@ -313,15 +314,16 @@ impl<'a> Model<'a> for Obj<'a> {
         settings:           &'a Settings,
         components:         ModelComponents,
     ) -> Result<Self, ErrBox> where Self:Sized {
+        let str = settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ)?;
+        let template_file_obj = Path::new(&str).to_owned();
 
-        let template_file_obj =
-                settings.get_parameter_str("template_file_obj", DEFAULT_TEMPLATE_FILE_OBJ.to_string())?;
-        let template_file_mtl =
-                settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL.to_string())?;
+        let str = settings.get_parameter_str("template_file_mtl", DEFAULT_TEMPLATE_FILE_MTL)?;
+        let template_file_mtl = Path::new(&str).to_owned();
+
         let scale = settings.get_parameter_num("scale", DEFAULT_SCALE)? as Height;
         let radius = settings.get_parameter_num("radius", DEFAULT_RADIUS)? as Height;
         let color_precision = settings.get_parameter_num("color_precision", DEFAULT_COLOR_PRECISION)? as ColorPrecision;
-        let texture_uri = settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI.to_string())?;
+        let texture_uri = settings.get_parameter_str("texture_uri", DEFAULT_TEXTURE_URI)?;
 
         return Ok(Obj{
             model_type,
@@ -344,7 +346,7 @@ impl<'a> Model<'a> for Obj<'a> {
     fn save(&self) -> Result<(), ErrBox> {
         let settings = self.settings;
         let planet_name = &settings.planet_name;
-        let output_path = &settings.output_dir;
+        let output_path = settings.output_dir;
 
         // mtl file
         let create_mtl = || -> Result<(), ErrBox> {
@@ -359,7 +361,7 @@ impl<'a> Model<'a> for Obj<'a> {
                     .with_extension("mtl");
             let mtl_path = match mtl_path_opt.to_str() {
                 Some(fp) => fp,
-                None => return Err(format!("Can't make mtl file with path {} and name {}", &output_path, &planet_name).into())
+                None => return Err(format!("Can't make mtl file with path {:?} and name {}", output_path, &planet_name).into())
             };
             let f_mtl = File::create(&mtl_path)
                 .map_err(|err| {format!("Can't create mtl file {}: {}", &mtl_path, err)})?;
@@ -368,10 +370,10 @@ impl<'a> Model<'a> for Obj<'a> {
             // header
             data.clear();
             let f_tmpl = File::open(&self.template_file_mtl)
-                .map_err(|err| {format!("Can't open mtl template file {}: {}", &self.template_file_mtl, err)})?;
+                .map_err(|err| {format!("Can't open mtl template file {:?}: {}", self.template_file_mtl, err)})?;
             let mut br = BufReader::new(f_tmpl);
             br.read_to_string(&mut data)
-                .map_err(|err| {format!("Can't read mtl template file {}: {}", &self.template_file_mtl, err)})?;
+                .map_err(|err| {format!("Can't read mtl template file {:?}: {}", self.template_file_mtl, err)})?;
             if let ModelType::Texture = &self.model_type {
                 data.push_str(&format!("map_Kd {}\n", self.texture_uri))
             }
@@ -416,7 +418,7 @@ impl<'a> Model<'a> for Obj<'a> {
                     .with_extension("obj");
             let result_path = match result_path_opt.to_str() {
                 Some(fp) => fp,
-                None => return Err(format!("Can't make obj file with path {} and name {}", &output_path, &planet_name).into())
+                None => return Err(format!("Can't make obj file with path {:?} and name {}", output_path, &planet_name).into())
             };
             let f_obj = File::create(&result_path)
                 .map_err(|err| {format!("Can't create obj file {}: {}", &result_path, err)})?;
@@ -425,10 +427,10 @@ impl<'a> Model<'a> for Obj<'a> {
             // header
             data.clear();
             let f_tmpl = File::open(&self.template_file_obj)
-                .map_err(|err| {format!("Can't open obj template file {}: {}", &self.template_file_obj, err)})?;
+                .map_err(|err| {format!("Can't open obj template file {:?}: {}", self.template_file_obj, err)})?;
             let mut br = BufReader::new(f_tmpl);
             br.read_to_string(&mut data)
-                .map_err(|err| {format!("Can't read obj template file {}: {}", &self.template_file_obj, err)})?;
+                .map_err(|err| {format!("Can't read obj template file {:?}: {}", self.template_file_obj, err)})?;
             data.push_str(&format!("# Model size: {}\n", self.model_size));
             data.push_str(&format!("\nmtllib {}.mtl\n", planet_name));
             data.push_str("o Planet\n");
