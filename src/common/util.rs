@@ -1,14 +1,13 @@
-use std::mem;
-use std::i16;
 use std::f64::consts::PI;
-use std::vec::Vec;
+use std::i16;
+use std::mem;
 use std::path::Path;
+use std::vec::Vec;
 
 use crate::common::types::*;
 
-
 /// Converts a vector of u8 values to a vector of i16 values
-pub fn vec_u8_to_i16 (mut vec_u8:Vec<u8>) -> Vec<i16> {
+pub fn vec_u8_to_i16(mut vec_u8: Vec<u8>) -> Vec<i16> {
     if vec_u8.len() % 2 != 0 {
         panic!("Odd length of vector data, reminder: {}", vec_u8.len() % 2);
     }
@@ -31,39 +30,43 @@ pub fn vec_u8_to_i16 (mut vec_u8:Vec<u8>) -> Vec<i16> {
 }
 
 /// Calculates coordinates of a model vertex
-pub fn calc_point3d(radius: Height, scale: Height, height: Height, lon: Coord, lat: Coord) -> (Coord, Coord, Coord) {
-    let r = 1.0 + scale as f64*height as f64/radius as f64;
-    let phi = lon as f64*PI/180.0;
-    let theta = lat as f64*PI/180.0;
-    let x = -r*phi.sin() * theta.cos();
-    let y = r*phi.cos() * theta.cos();
-    let z = r*theta.sin();
+pub fn calc_point3d(
+    radius: Height,
+    scale: Height,
+    height: Height,
+    lon: Coord,
+    lat: Coord,
+) -> (Coord, Coord, Coord) {
+    let r = 1.0 + scale as f64 * height as f64 / radius as f64;
+    let phi = lon as f64 * PI / 180.0;
+    let theta = lat as f64 * PI / 180.0;
+    let x = -r * phi.sin() * theta.cos();
+    let y = r * phi.cos() * theta.cos();
+    let z = r * theta.sin();
     (x as Coord, y as Coord, z as Coord)
 }
 
 /// Check validity of directory path specification
-pub fn check_dir(value: &str) -> Result<(), String> {
-    let p = Path::new(&value);
+pub fn check_dir(p: &Path) -> Result<(), ErrBox> {
     if p.exists() && p.is_dir() {
         match p.to_str() {
             Some(_) => Ok(()),
-            None => Err(format!("Invalid path: {}", value))
+            None => Err(format!("Invalid path: {:?}", p).into()),
         }
     } else {
-        Err(format!("Directory path is invalid or can't be read: {}", value))
+        Err(format!("Directory path is invalid or can't be read: {:?}", p).into())
     }
 }
 
 /// Check validity of file path specification
-pub fn check_file(value: &str) -> Result<(), String> {
-    let p = Path::new(&value);
+pub fn check_file(p: &Path) -> Result<(), ErrBox> {
     if p.exists() && p.is_file() {
         match p.to_str() {
             Some(_) => Ok(()),
-            None => Err(format!("Invalid file: {}", value))
+            None => Err(format!("Invalid file: {:?}", p).into()),
         }
     } else {
-        Err(format!("File path is invalid or can't be read: {}", value))
+        Err(format!("File path is invalid or can't be read: {:?}", p).into())
     }
 }
 
@@ -79,4 +82,3 @@ mod tests {
         assert_eq!(vec_i16, vec![257; 8])
     }
 }
-

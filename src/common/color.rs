@@ -1,185 +1,332 @@
+//! Color handling utilities for elevation mapping
+//!
+//! This module provides functionality for working with RGB colors in the context of
+//! elevation mapping. It includes:
+//!
+//! - RGB color representation with formatting
+//! - Color interpolation from elevation profiles
+//! - Color quantization and palette management
+//! - Parsing of color profile files
+//!
+//! The module is designed to map elevation values to colors for visualization purposes,
+//! where different elevation ranges are assigned specific RGB colors.
+//!
+//! # Color Profile Files
+//!
+//! Color profile files define the mapping between elevation values and RGB colors.
+//! Each line in the file should contain:
+//!
+//! ```text
+//! <elevation> <red> <green> <blue>
+//! ```
+//! Where:
+//! - Elevation is a non-negative integer
+//! - RGB components are floating-point values between 0.0 and 1.0
+use crate::common::types::*;
+use regex::Regex;
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::read_to_string;
-use std::collections::HashMap;
-use regex::Regex;
+use std::path::Path;
 
-use crate::common::types::*;
+const DEFAULT_COLOR: RGB = RGB(0.5, 0.5, 0.5);
 
-
-const DEFAULT_COLOR: RGB = RGB (0.5, 0.5, 0.5);
-
-
-/// Color componenent
+/// Color component type for RGB values
+///
+/// Represents a single color component (red, green, or blue) with floating-point precision.
+/// Values should be in the range [0.0, 1.0].
 pub type ColorComponent = f32;
 
+/// RGB Color structure
+///
+/// Represents a color in the RGB color space with three components:
+/// - Red (0.0 to 1.0)
+/// - Green (0.0 to 1.0)  
+/// - Blue (0.0 to 1.0)
+///
+/// Implements Display trait for formatted string output.
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// RGB Color
-pub struct RGB (pub ColorComponent, pub ColorComponent, pub ColorComponent);
+pub struct RGB(pub ColorComponent, pub ColorComponent, pub ColorComponent);
 
 impl fmt::Display for RGB {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} {}",
-            format!("{:.3}", self.0).trim_end_matches("0").trim_end_matches('.'),
-            format!("{:.3}", self.1).trim_end_matches("0").trim_end_matches('.'),
-            format!("{:.3}", self.2).trim_end_matches("0").trim_end_matches('.'),
+        write!(
+            f,
+            "{} {} {}",
+            format!("{:.3}", self.0)
+                .trim_end_matches("0")
+                .trim_end_matches('.'),
+            format!("{:.3}", self.1)
+                .trim_end_matches("0")
+                .trim_end_matches('.'),
+            format!("{:.3}", self.2)
+                .trim_end_matches("0")
+                .trim_end_matches('.'),
         )
     }
 }
 
-/// Integer precision for defining colors
-pub type ColorPrecision = u16;
-
-/// Color specification with three numbers defining positions in rgb color intervals
-pub type ColorPosition = (ColorPrecision, ColorPrecision, ColorPrecision);
-
-/// Elevation to RGB Color mapping
-pub type ColorMappning = HashMap<HeightInt, RGB>;
-
-/// Color profile file content
+/// Color profile file content type
+///
+/// Represents the content of a color profile file as a vector of strings,
+/// where each string corresponds to a line in the file.
 type ColorProfileFileContent = Vec<String>;
 
+/// Integer precision type for defining colors
+///
+/// Used to specify the precision level for color quantization, typically
+/// representing the number of discrete color levels in each RGB component.
+pub type ColorPrecision = u16;
+
+/// Color position type
+///
+/// Represents a color position as three discrete values (r, g, b) that define
+/// a position in the RGB color space. Each component is a ColorPrecision value.
+pub type ColorPosition = (ColorPrecision, ColorPrecision, ColorPrecision);
+
+/// Color profile record
+///
+/// Represents a single record in a color profile file containing:
+/// - HeightInt: Elevation value
+/// - ColorComponent: Red component value (0.0 to 1.0)
+/// - ColorComponent: Green component value (0.0 to 1.0)
+/// - ColorComponent: Blue component value (0.0 to 1.0)
 #[derive(Debug, Clone, PartialEq)]
-/// Color profile record (element of color table)
-struct ColorRecord (
+struct ColorRecord(
     pub HeightInt,
     pub ColorComponent,
     pub ColorComponent,
     pub ColorComponent,
 );
 
-/// Read color profile file
-fn read_lines(filepath: &str) -> Result<ColorProfileFileContent, String> {
+/// Read color profile file lines into a vector
+///
+/// Reads the entire content of a color profile file and splits it into lines.
+fn read_lines(filepath: &Path) -> Result<ColorProfileFileContent, ErrBox> {
     read_to_string(filepath)
-        .map(|str| {str.lines().map(String::from).collect()})
-        .map_err(|err| {err.to_string()})
+        .map(|str| str.lines().map(String::from).collect())
+        .map_err(|err| err.into())
 }
 
-/// Build color table
-fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorRecord>, String> {
-    let re = Regex::new(r"^([0-9]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*$").unwrap();
+/// Build color table from file content
+///
+/// Parses color profile file content into a structured color table.
+/// Each line should contain: height red green blue values separated by whitespace.
+/// Lines starting with '#' are treated as comments and ignored.
+fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorRecord>, ErrBox> {
+    let re_line_ = Regex::new(
+        r"^\s*(\d+)\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s+(0(?:\.\d+)?|(?:\.\d+)|(?:1(?:\.0)?))\s*$",
+    );
+    let re_line = match re_line_ {
+        Ok(re_) => re_,
+        Err(_) => return Err("RegExp error".into()),
+    };
+    let re_comment_ = Regex::new(r"^#.*");
+    let re_comment = match re_comment_ {
+        Ok(re_) => re_,
+        Err(_) => return Err("RegExp error".into()),
+    };
     let mut l: usize = 0;
     let mut prev_h: HeightInt = -32767;
 
     let mut color_table = vec![];
     for line in file_content {
         l += 1;
-        match re.captures(&line) {
+        match re_line.captures(&line) {
             Some(caps) => {
-                let h = caps[1].parse::<HeightInt>().unwrap();
-                let r = caps[2].parse::<ColorComponent>().unwrap();
-                let g = caps[3].parse::<ColorComponent>().unwrap();
-                let b = caps[4].parse::<ColorComponent>().unwrap();
+                let h = caps[1].parse::<HeightInt>().map_err(|err| -> ErrBox {
+                    format!("Can't parse height value at line {}: {}", l, err).into()
+                })?;
+                let r = caps[2].parse::<ColorComponent>().map_err(|err| -> ErrBox {
+                    format!("Can't parse Red component at line {}: {}", l, err).into()
+                })?;
+                let g = caps[3].parse::<ColorComponent>().map_err(|err| -> ErrBox {
+                    format!("Can't parse Green component at line {}: {}", l, err).into()
+                })?;
+                let b = caps[4].parse::<ColorComponent>().map_err(|err| -> ErrBox {
+                    format!("Can't parse Blue component at line {}: {}", l, err).into()
+                })?;
 
-                if r>1.0 || r<0.0 {
-                    return Err(format!("Invalid number in second column of line {} in color profile", l));
-                }
-                if g>1.0 || g<0.0 {
-                    return Err(format!("Invalid number in third column of line {} in color profile", l));
-                }
-                if b>1.0 || b<0.0 {
-                    return Err(format!("Invalid number in fourth column of line {} in color profile", l));
-                }
-
-                if h<=prev_h {
-                    return Err(format!("Heights in color profile must be strictly incremental"));
+                if h <= prev_h {
+                    return Err(
+                        format!("Heights in color profile must be strictly incremental").into(),
+                    );
                 }
                 prev_h = h;
 
-                color_table.push(ColorRecord (h, r, g, b));
+                color_table.push(ColorRecord(h, r, g, b));
             }
-            None => {}
+            None => match re_comment.captures(&line) {
+                Some(_) => {}
+                None => {
+                    return Err(format!("Invalid line {} in color profile", l).into());
+                }
+            },
         }
     }
 
     if color_table.is_empty() {
-        return Err("Color table is empty".to_string());
+        return Err("Color table is empty".into());
     } else {
         return Ok(color_table);
     }
 }
 
-/// Builds color mapping data (HeightInt -> RGB)
-fn build_color_mapping(color_table: Vec<ColorRecord>) -> ColorMappning {
-    let mut color_mapping = HashMap::new();
+/// Build color mapping from color table
+///
+/// Creates a mapping from elevation values to RGB colors by interpolating
+/// between color records in the table. For heights between records, linear
+/// interpolation is used to determine the color.
+fn make_mapping(color_table: &Vec<ColorRecord>) -> Result<HashMap<HeightInt, RGB>, ErrBox> {
+    let mut mapping = HashMap::new();
 
-    let ColorRecord (hl, rl, gl, bl) = &color_table.last().unwrap();
-    color_mapping.insert(*hl, RGB (*rl, *gl, *bl));    // biggest height
+    // Handle the last record (highest elevation)
+    let ColorRecord(hl, rl, gl, bl) = &color_table
+        .last()
+        .ok_or_else(|| -> ErrBox { "Color table is empty".into() })?;
+    mapping.insert(*hl, RGB(*rl, *gl, *bl)); // biggest height
 
     let mut color_table_copy = color_table.clone();
     color_table_copy.remove(0);
 
     let color_table_bounds = color_table.into_iter().zip(color_table_copy);
 
-    for (
-        ColorRecord (h0, r0, g0, b0),
-        ColorRecord (h1, r1, g1, b1)
-    ) in color_table_bounds {
-        for h in h0..h1 {
-            let delta_h = (h-h0) as ColorComponent;
-            let span_h = (h1-h0) as ColorComponent;
-            color_mapping.insert(h, RGB (
-                r0 + (r1-r0)*delta_h/span_h,
-                g0 + (g1-g0)*delta_h/span_h,
-                b0 + (b1-b0)*delta_h/span_h,
-            ));
+    for (ColorRecord(h0, r0, g0, b0), ColorRecord(h1, r1, g1, b1)) in color_table_bounds {
+        for h in *h0..h1 {
+            let delta_h = (h - h0) as ColorComponent;
+            let span_h = (h1 - h0) as ColorComponent;
+            mapping.insert(
+                h,
+                RGB(
+                    r0 + (r1 - r0) * delta_h / span_h,
+                    g0 + (g1 - g0) * delta_h / span_h,
+                    b0 + (b1 - b0) * delta_h / span_h,
+                ),
+            );
         }
     }
 
-    return color_mapping;
+    return Ok(mapping);
 }
 
-/// Returns function to mapping values of HeightInt type to RGB values
-pub fn get_color_mapping(filepath: &str) -> Result<impl Fn(HeightInt) -> RGB, String> {
-    let file_content = read_lines(&filepath)?;
-    let color_table = build_color_table(file_content)?;
+/// Struct of in-memory mapping of elevations to colors
+pub struct ColorMapping {
+    mapping: HashMap<HeightInt, RGB>,
+    first_color_record: ColorRecord,
+    last_color_record: ColorRecord,
+}
 
-    let ColorRecord (h0, r0, g0, b0) = color_table.first().unwrap().clone();
-    let ColorRecord (h1, r1, g1, b1) = color_table.last().unwrap().clone();
+impl ColorMapping {
+    /// Get color mapping function from color profile file
+    ///
+    /// Creates a closure that maps elevation values to RGB colors by reading
+    /// a color profile file and building an interpolation mapping.
+    pub fn create(filepath: &Path) -> Result<ColorMapping, ErrBox> {
+        let file_content = read_lines(&filepath)?;
+        let color_table = build_color_table(file_content)?;
 
-    let color_mapping = build_color_mapping(color_table);
+        let mapping = make_mapping(&color_table)?;
+        let first_color_record = color_table
+            .first()
+            .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?
+            .clone();
+        let last_color_record = color_table
+            .last()
+            .ok_or_else(|| -> ErrBox { "Can't get last element in color table".into() })?
+            .clone();
 
-    Ok(move |h| {
-        match color_mapping.get(&h) {
-            Some(c) => *c,
-            None =>
-                if h<h0 {RGB (r0, g0, b0)}
-                else if h>h1 {RGB (r1, g1, b1)}
-                else {panic!("Missing color for elevation {}", h)}
+        Ok(ColorMapping {
+            mapping: mapping,
+            first_color_record,
+            last_color_record,
+        })
+    }
+
+    /// Get color for a given elevation
+    ///
+    /// Returns the RGB color for a given elevation value. If the elevation
+    /// is below the first record, returns the first record's color. If the
+    /// elevation is above the last record, returns the last record's color.
+    /// For intermediate elevations, returns interpolated colors from the mapping.
+    pub fn get_color(&self, h: HeightInt) -> Result<RGB, ErrBox> {
+        match self.mapping.get(&h) {
+            Some(c) => Ok(*c),
+            None => {
+                if h < self.first_color_record.0 {
+                    Ok(RGB(
+                        self.first_color_record.1,
+                        self.first_color_record.2,
+                        self.first_color_record.3,
+                    ))
+                } else if h > self.last_color_record.0 {
+                    Ok(RGB(
+                        self.last_color_record.1,
+                        self.last_color_record.2,
+                        self.last_color_record.3,
+                    ))
+                } else {
+                    Err(format!("Missing color for the elevation {}", h).into())
+                }
+            }
         }
-    })
+    }
 }
 
-/// Returns function which makes allowed color from arbitrary color
-pub fn make_allowed_color_function(prec: ColorPrecision) -> impl Fn(RGB)-> (RGB, ColorPosition) {
-    let interval = 1.0/(prec as ColorComponent);
+/// Create function to make allowed color from arbitrary color
+///
+/// Creates a closure that quantizes an RGB color to the nearest allowed color
+/// based on the specified precision level. This is useful for color palette
+/// restrictions or reducing color depth.
+pub fn make_allowed_color_function(prec: ColorPrecision) -> impl Fn(RGB) -> (RGB, ColorPosition) {
+    let interval = 1.0 / (prec as ColorComponent);
     move |color| {
-        if prec>0 {
-            let RGB (r, g, b) = color;
-            let r_k = ((r as ColorComponent)/interval).round();
-            let g_k = ((g as ColorComponent)/interval).round();
-            let b_k = ((b as ColorComponent)/interval).round();
+        if prec > 0 {
+            let RGB(r, g, b) = color;
+            let r_k = ((r as ColorComponent) / interval).round();
+            let g_k = ((g as ColorComponent) / interval).round();
+            let b_k = ((b as ColorComponent) / interval).round();
 
-            (RGB (
-                (r_k*interval) as ColorComponent,
-                (g_k*interval) as ColorComponent,
-                (b_k*interval) as ColorComponent
-            ), (r_k as ColorPrecision, g_k as ColorPrecision, b_k as ColorPrecision))
+            (
+                RGB(
+                    (r_k * interval) as ColorComponent,
+                    (g_k * interval) as ColorComponent,
+                    (b_k * interval) as ColorComponent,
+                ),
+                (
+                    r_k as ColorPrecision,
+                    g_k as ColorPrecision,
+                    b_k as ColorPrecision,
+                ),
+            )
         } else {
             (DEFAULT_COLOR, (0, 0, 0))
         }
     }
 }
 
-/// Calculates interval within rgb intervals which separates individual color component values
+/// Calculate color interval for given precision
+///
+/// Computes the interval size between discrete color values for a given precision.
+/// This represents the step size in the color space for each component.
 pub fn get_color_interval(prec: ColorPrecision) -> ColorComponent {
-    1.0/(prec as ColorComponent)
+    1.0 / (prec as ColorComponent)
 }
 
-/// Restores rgb color from components
-pub fn make_rgb_color(interval: ColorComponent, r_k: ColorPrecision, g_k: ColorPrecision, b_k: ColorPrecision) -> RGB {
-    RGB (r_k as ColorComponent * interval,
+/// Restore RGB color from discrete components
+///
+/// Creates an RGB color from discrete color position components and interval size.
+/// This is the inverse operation of quantization.
+pub fn make_rgb_color(
+    interval: ColorComponent,
+    r_k: ColorPrecision,
+    g_k: ColorPrecision,
+    b_k: ColorPrecision,
+) -> RGB {
+    RGB(
+        r_k as ColorComponent * interval,
         g_k as ColorComponent * interval,
-        b_k as ColorComponent * interval)
+        b_k as ColorComponent * interval,
+    )
 }
 
 #[cfg(test)]
@@ -187,11 +334,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_color_table_t0() -> Result<(), String> {
+    fn build_color_table_t0() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
             String::from("1       0       0.7     0  "),
-            String::from("500     0.5     0.7     0  "),
+            String::from("500     0.5     .7      0  "),
             String::from("1500    0.5     0.5     0  "),
             String::from("4000    0.6     0.4     0.1"),
             String::from("8000    0.8     0.2     0  "),
@@ -201,52 +348,77 @@ mod tests {
             Err(err) => Err(err),
             Ok(color_table) => {
                 let color_table0 = vec![
-                    ColorRecord (0, 0.0, 0.0, 0.7),
-                    ColorRecord (1, 0.0, 0.7, 0.0),
-                    ColorRecord (500, 0.5, 0.7, 0.0),
-                    ColorRecord (1500, 0.5, 0.5, 0.0),
-                    ColorRecord (4000, 0.6, 0.4, 0.1),
-                    ColorRecord (8000, 0.8, 0.2, 0.0),
+                    ColorRecord(0, 0.0, 0.0, 0.7),
+                    ColorRecord(1, 0.0, 0.7, 0.0),
+                    ColorRecord(500, 0.5, 0.7, 0.0),
+                    ColorRecord(1500, 0.5, 0.5, 0.0),
+                    ColorRecord(4000, 0.6, 0.4, 0.1),
+                    ColorRecord(8000, 0.8, 0.2, 0.0),
                 ];
                 // assert_eq!(color_table, color_table0)
-                if color_table==color_table0 {
+                if color_table == color_table0 {
                     Ok(())
                 } else {
-                    Err(format!("wrong color_table: {:?}", color_table))
+                    Err(format!("wrong color_table: {:?}", color_table).into())
                 }
             }
         }
     }
 
     #[test]
-    fn build_color_table_t1() -> Result<(), String> {
+    fn build_color_table_t1() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
-            String::from("1500    0.5     0.5     0  "),
-            String::from(" 4000    0.6     0.4     0.1"),
-            String::from("8000    0.8     0.2     0  "),
+            String::from("0    0.5     0.5     0  "),
+            String::from(" 1   0.6     0.4     0.1"),
+            String::from("2    0.8     0.2     0  "),
         ];
 
         match build_color_table(file_content) {
             Err(err) => Err(err),
             Ok(color_table) => {
                 let color_table0 = vec![
-                    ColorRecord (1500, 0.5, 0.5, 0.0),
-                    ColorRecord (8000, 0.8, 0.2, 0.0),
+                    ColorRecord(0, 0.5, 0.5, 0.0),
+                    ColorRecord(1, 0.6, 0.4, 0.1),
+                    ColorRecord(2, 0.8, 0.2, 0.0),
                 ];
-                if color_table==color_table0 {
+                if color_table == color_table0 {
                     Ok(())
                 } else {
-                    Err(format!("wrong color_table: {:?}", color_table))
+                    Err(format!("wrong color_table: {:?}", color_table).into())
                 }
             }
         }
     }
 
     #[test]
-    fn build_color_table_t2() -> Result<(), String> {
+    fn build_color_table_t2() -> Result<(), ErrBox> {
+        let file_content: ColorProfileFileContent = vec![
+            String::from("0       0.0       0       0.7"),
+            String::from("#1      1.0       0.7     0  "),
+            String::from("3       .333      0.7     0  "),
+        ];
+
+        match build_color_table(file_content) {
+            Err(err) => Err(err),
+            Ok(color_table) => {
+                let color_table0 = vec![
+                    ColorRecord(0, 0.0, 0.0, 0.7),
+                    ColorRecord(3, 0.333, 0.7, 0.0),
+                ];
+                if color_table == color_table0 {
+                    Ok(())
+                } else {
+                    Err(format!("wrong color_table: {:?}", color_table).into())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn build_color_table_t3() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
-            String::from("#1       0       0.7     0  "),
+            String::from("1       0       0.7     .3"),
             String::from("500     0.5     0.7     0  "),
         ];
 
@@ -254,36 +426,12 @@ mod tests {
             Err(err) => Err(err),
             Ok(color_table) => {
                 let color_table0 = vec![
-                    ColorRecord (0, 0.0, 0.0, 0.7),
-                    ColorRecord (500, 0.5, 0.7, 0.0),
+                    ColorRecord(0, 0.0, 0.0, 0.7),
+                    ColorRecord(1, 0.0, 0.7, 0.0),
+                    ColorRecord(500, 0.5, 0.7, 0.0),
                 ];
-                if color_table==color_table0 {
-                    Ok(())
-                } else {
-                    Err(format!("wrong color_table: {:?}", color_table))
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn build_color_table_t3() -> Result<(), String> {
-        let file_content: ColorProfileFileContent = vec![
-            String::from("0       0       0       0.7"),
-            String::from("1       0       0.7   "),
-            String::from("500     0.5     0.7     0  "),
-        ];
-
-        match build_color_table(file_content) {
-            Err(err) => Err(err),
-            Ok(color_table) => {
-                let color_table0 = vec![
-                    ColorRecord (0, 0.0, 0.0, 0.7),
-                    ColorRecord (1, 0.0, 0.7, 0.0),
-                    ColorRecord (500, 0.5, 0.7, 0.0),
-                ];
-                if color_table==color_table0 {
-                    Err(format!("wrong color_table: {:?}", color_table))
+                if color_table == color_table0 {
+                    Err(format!("wrong color_table: {:?}", color_table).into())
                 } else {
                     Ok(())
                 }
@@ -302,19 +450,20 @@ mod tests {
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err==format!("Heights in color profile must be strictly incremental") {
+                if err.to_string()
+                    == format!("Heights in color profile must be strictly incremental")
+                {
                     Ok(())
                 } else {
                     Err(format!("Got: {}", err))
                 }
-
-            },
-            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table))
+            }
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table)),
         }
     }
 
     #[test]
-    fn build_color_table_t5() -> Result<(), String> {
+    fn build_color_table_t5() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
             String::from("500     1.5     0.7     0  "),
@@ -324,39 +473,39 @@ mod tests {
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err==format!("Invalid number in second column of line {} in color profile", 2) {
+                if err.to_string() == format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
-                    Err(format!("Got: {}", err))
+                    Err(format!("Got: {}", err).into())
                 }
-            },
-            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table))
+            }
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table).into()),
         }
     }
 
     #[test]
-    fn build_color_table_t6() -> Result<(), String> {
+    fn build_color_table_t6() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
-            String::from("500     0.5     2.7     0  "),
+            String::from("500     0.5     -0.7    0  "),
             String::from("1500    0.5     0.5     0  "),
             String::from("4000    0.6     0.4     0.1"),
         ];
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err==format!("Invalid number in third column of line {} in color profile", 2) {
+                if err.to_string() == format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
-                    Err(format!("Got: {}", err))
+                    Err(format!("Got: {}", err).into())
                 }
-            },
-            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table))
+            }
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table).into()),
         }
     }
 
     #[test]
-    fn build_color_table_t7() -> Result<(), String> {
+    fn build_color_table_t7() -> Result<(), ErrBox> {
         let file_content: ColorProfileFileContent = vec![
             String::from("0       0       0       0.7"),
             String::from("500     0.5     0.7     1.0001  "),
@@ -366,52 +515,45 @@ mod tests {
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err==format!("Invalid number in fourth column of line {} in color profile", 2) {
+                if err.to_string() == format!("Invalid line {} in color profile", 2) {
                     Ok(())
                 } else {
-                    Err(format!("Got: {}", err))
+                    Err(format!("Got: {}", err).into())
                 }
-            },
-            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table))
+            }
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table).into()),
         }
     }
 
     #[test]
-    fn build_color_table_t8() -> Result<(), String> {
-        let file_content: ColorProfileFileContent = vec![
-            String::from(" 0       0       0       0.7"),
-            String::from("#500     0.5     0.7     0.1  "),
-        ];
+    fn build_color_table_t8() -> Result<(), ErrBox> {
+        let file_content: ColorProfileFileContent = vec![];
 
         match build_color_table(file_content) {
             Err(err) => {
-                if err==format!("Color table is empty") {
+                if err.to_string() == format!("Color table is empty") {
                     Ok(())
                 } else {
-                    Err(format!("Got: {}", err))
+                    Err(format!("Got: {}", err).into())
                 }
-            },
-            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table))
+            }
+            Ok(color_table) => Err(format!("wrong color_table: {:?}", color_table).into()),
         }
     }
 
     #[test]
-    fn allowed_color_function_t0() {
-        let color0 = RGB (0.0, 0.35, 1.0);
+    fn allowed_color_function_test() {
+        // Test that the function works correctly
+        let func = make_allowed_color_function(4);
+        let result = func(RGB(0.3, 0.7, 0.9));
+        assert_eq!(result.0, RGB(0.25, 0.75, 1.0));
+        assert_eq!(result.1, (1, 3, 4));
+    }
 
-        let f1 = make_allowed_color_function(1);
-        assert_eq!(f1(color0), (RGB (0.0, 0.0, 1.0), (0, 0, 1)));
-
-        let f2 = make_allowed_color_function(2);
-        assert_eq!(f2(color0), (RGB (0.0, 0.5, 1.0), (0, 1, 2)));
-
-        let f4 = make_allowed_color_function(4);
-        assert_eq!(f4(color0), (RGB (0.0, 0.25, 1.0), (0, 1, 4)));
-
-        let f8 = make_allowed_color_function(8);
-        assert_eq!(f8(color0), (RGB (0.0, 0.375, 1.0), (0, 3, 8)));
-
-        let f0 = make_allowed_color_function(0);
-        assert_eq!(f0(color0), (DEFAULT_COLOR, (0, 0, 0)));
+    #[test]
+    fn make_rgb_color_test() {
+        let interval = 0.25;
+        let color = make_rgb_color(interval, 1, 2, 3);
+        assert_eq!(color, RGB(0.25, 0.5, 0.75));
     }
 }
