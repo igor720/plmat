@@ -1,10 +1,10 @@
-//! This module contains the definitions for command line argument parsing 
-//! and related types used throughout the application. 
-//! It includes enums, functions, traits, and subcommands tailored for different modes of operation 
+//! This module contains the definitions for command line argument parsing
+//! and related types used throughout the application.
+//! It includes enums, functions, traits, and subcommands tailored for different modes of operation
 //! such as `X3DGeospatial` and `Obj`.
-use std::thread::available_parallelism;
-use std::cmp::min;
 use argh::FromArgs;
+use std::cmp::min;
+use std::thread::available_parallelism;
 
 use crate::common::types::*;
 
@@ -17,7 +17,7 @@ fn get_model_type(value: &str) -> Result<ModelType, String> {
     match value {
         "texture" => Ok(ModelType::Texture),
         "color" => Ok(ModelType::Color),
-        _ => Err("Unknown model type".to_string())
+        _ => Err("Unknown model type".to_string()),
     }
 }
 
@@ -36,7 +36,7 @@ pub enum DataSourceName {
 fn get_data_source_name(value: &str) -> Result<DataSourceName, String> {
     match value {
         "DemArcSec3" => Ok(DataSourceName::DemArcSec3),
-        _ => Err("Unknown data source".to_string())
+        _ => Err("Unknown data source".to_string()),
     }
 }
 

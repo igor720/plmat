@@ -28,11 +28,11 @@ When launching the app, file settings.yaml must be in the current directory. Com
 
 ## Building and running
 
-To go with 'dev' profile
+To go with 'release' profile
 
     cargo build
     cargo test
-    cargo run -- obj color DemArcSec3 --data-source-dir ../hgts --model-size 64
+    cargo run --release -- obj color DemArcSec3 --data-source-dir ../hgts --model-size 64
 
 or to install with 'release' profile into ~/.cargo/bin/
 

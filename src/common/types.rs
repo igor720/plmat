@@ -18,7 +18,7 @@ pub type Coord = f64;
 
 #[derive(Debug)]
 /// Geopoint representing a location with longitude and latitude coordinates
-/// 
+///
 /// This struct is used to represent geographic locations in the application,
 /// typically for processing and calculating elevation data.
 pub struct GeoPoint {
