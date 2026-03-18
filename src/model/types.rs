@@ -58,16 +58,36 @@ use crate::input::dem::*;
 /// Default path for color profile file
 const DEFAULT_COLOR_PROFILE_FILE: &str = "./color_profile";
 
+/// Container for the components that make up a 3D model
+/// 
+/// This struct holds all the essential data elements that constitute a 3D model,
+/// including geometric information, texture data, and optional color information.
+/// It serves as a central container for model data during the creation and processing
+/// of 3D models from DEM (Digital Elevation Model) data.
+/// 
+/// The struct is designed to be flexible, allowing for different model types (texture
+/// vs color) while maintaining a consistent interface for accessing model components.
 pub struct ModelComponents {
-    /// Spacing between vertices in the grid
+    /// The distance between vertices in the model grid, determining the
+    /// resolution and density of the 3D surface
     pub spacing:                Coord,
-    /// Elevation values for each vertex in the model
+    /// A mapping of vertex indices to elevation values, forming the
+    /// foundation of the 3D terrain geometry
     pub heights:                Heights,
-    /// Model type data (either texture or color information)
+    /// Optional color data for each vertex, used in color models to
+    /// provide visual representation of elevation values
     pub colors:                 Option<Colors>,
+    /// Optional UV coordinates for texture mapping, used
+    /// in texture models to map texture images onto the 3D surface    
     pub texture_coordinates:    Option<TextureCoordinates>,
+    /// Optional collection of geographic points that define the 3D
+    /// model geometry, mapping vertex indices to actual geographic coordinates
     pub vertices:               Option<Vertices>,
+    /// Optional mapping between texture points and vertices,
+    /// used to associate texture coordinates with specific model vertices
     pub texture_mapping:        Option<PointsMapping>,
+    /// Optional triangular faces that define the connectivity of vertices
+    /// in the 3D mesh, creating the surface structure of the model
     pub faces:                  Option<Faces>,
 }
 
@@ -149,6 +169,12 @@ pub fn load_tile_data<'a>(data_source_path: &Path, data_source_name: &DataSource
     }
 }
 
+/// A wrapper struct for thread-safe access to model data during parallel processing
+/// 
+/// This struct encapsulates the shared elevation and color data that needs to be
+/// accessed by multiple threads during the model creation process. It's wrapped in
+/// a `Mutex` to ensure thread-safe access and prevent data races when multiple
+/// threads update the model's elevation and color information simultaneously.
 pub struct MutexStruct {
     heights: Heights,
     colors: Colors,
@@ -165,7 +191,7 @@ pub trait Model<'a> {
     fn make_valid_model_size(model_size: Option<GeoPointIndex>) -> GeoPointIndex;
 
     /// Creates geographic points and Faces for the model
-    fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> ModelData; //(ModelPoints, Faces);
+    fn create_modeldata(model_size: GeoPointIndex, spacing: Coord) -> ModelData;
 
     /// Returns number of points in the model
     fn num_model_vertices(_: GeoPointIndex, vertices: &Vertices) -> GeoPointIndex {
@@ -208,7 +234,7 @@ pub trait Model<'a> {
         components:             ModelComponents,
     ) -> Result<Self, ErrBox> where Self:Sized;
 
-    /// Do calculations of model vertices for a given tile
+    /// Do computations of model vertices for a given tile
     /// 
     /// This function processes elevation data for a specific DEM tile and updates
     /// the model's height and color information for vertices that fall within this tile.
@@ -223,8 +249,8 @@ pub trait Model<'a> {
     /// * `color_mapping` - Color mapping object used to convert elevation values to colors
     /// * `tile_id` - Identifier for the DEM tile being processed
     /// * `tile_vertices` - Vector of vertex indices and geographic points that fall within this tile
-    /// * `mutex` - Thread-safe mutex protecting shared model data (heights and colors)
-    /// * `tile_heights` - Mutable reference to store height values for vertices in this tile
+    /// * `mutex` - Thread-safe mutex protecting shared model data (elevations and colors)
+    /// * `tile_heights` - Mutable reference to store elevation values for vertices in this tile
     /// * `tile_colors` - Mutable reference to store color values for vertices in this tile
     /// 
     /// # Processing Flow
@@ -243,7 +269,7 @@ pub trait Model<'a> {
     /// # Thread Safety
     /// This function is designed to be called from multiple threads in parallel.
     /// It uses a mutex to safely update shared model data structures.
-    fn calc_for_tile(
+    fn calc_tile(
             model_type: ModelType,
             settings: &Settings, 
             data_source_name: &DataSourceName, 
@@ -317,7 +343,7 @@ pub trait Model<'a> {
     /// 6. **Model Construction**: Builds the final model using the `build_model` method
     /// 
     /// # Thread Safety
-    /// The function uses a `Mutex` to protect shared model data structures (heights and colors)
+    /// The function uses a `Mutex` to protect shared model data structures (elevations and colors)
     /// during parallel processing. Each thread processes its assigned tiles independently,
     /// but safely updates the shared data through the mutex.
     /// 
@@ -354,7 +380,7 @@ pub trait Model<'a> {
         let model_size = Self::make_valid_model_size(settings.model_size);
         let spacing = Self::define_spacing(model_size);
 
-        let ModelData(vertices, faces, texture_mapping) = Self::create_modelpoints(model_size, spacing);
+        let ModelData(vertices, faces, texture_mapping) = Self::create_modeldata(model_size, spacing);
         let vertices_tiles = Self::create_vertices_tiles(&opts, &vertices);
 
         let texture_coordinates = 
@@ -402,7 +428,7 @@ pub trait Model<'a> {
                         let mut tile_colors: Colors = BTreeMap::new();
                         match vertices_tiles.get(&tile_id) {
                             Some(tile_vertices) => {
-                                Self::calc_for_tile(
+                                Self::calc_tile(
                                     model_type,
                                     settings, 
                                     data_source_name,
@@ -442,5 +468,27 @@ pub trait Model<'a> {
     }
 
     /// Saves the model data to output files
+    /// 
+    /// This function is responsible for persisting the created 3D model data to 
+    /// disk in the specified output format. The function handles writing all 
+    /// components of the model (geometry, texture coordinates, faces, etc.) 
+    /// to appropriate files based on the model type and user configuration.
+    /// 
+    /// # File Generation
+    /// The function generates output files in the directory specified by 
+    /// `settings.output_dir` with filenames based on the `settings.output_file` 
+    /// parameter. The exact format and naming convention depends on the 
+    /// output format specified in the settings.
+    /// 
+    /// # Thread Safety
+    /// This function is designed to be called on a single-threaded context 
+    /// after all model processing is complete. It does not perform any 
+    /// thread-safe operations as it's meant to be called from the main thread 
+    /// after parallel processing is finished.
+    /// 
+    /// # Performance Considerations
+    /// - File I/O operations are performed synchronously
+    /// - Large models may take considerable time to write to disk
+    /// - Memory usage is minimal as data is written incrementally
     fn save(&self) -> Result<(), ErrBox>;
 }

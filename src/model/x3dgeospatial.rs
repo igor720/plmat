@@ -77,13 +77,13 @@ const DEFAULT_TEXTURE_URI: &str = "\"texture.png\"";
 /// The model is built on a grid where each vertex has geographic coordinates
 /// (longitude and latitude) and elevation values.
 pub struct X3DGeospatial<'a> {
-    /// Model type (Color() or Texture())
+    /// Model type (Color or Texture)
     model_type:         ModelType,
     /// Size of the model grid (number of vertices along each dimension)
     model_size:         GeoPointIndex,
     /// Reference to the settings configuration
     settings:           &'a Settings<'a>,
-    /// Model data
+    /// Various model data
     components:         ModelComponents,
     /// Path to the X3D template file used for output generation
     template_file:      PathBuf,
@@ -111,7 +111,7 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
     /// 
     /// Generates a grid of geographic points covering the entire globe.
     /// The points are arranged in a specific pattern to create the 3D surface.
-    fn create_modelpoints(model_size: GeoPointIndex, spacing: Coord) -> ModelData {
+    fn create_modeldata(model_size: GeoPointIndex, spacing: Coord) -> ModelData {
         // let mut vertices: Vertices = HashMap::with_capacity(2*(model_size+1)*(model_size+1));
         let mut vertices: Vertices = BTreeMap::new();
 
@@ -141,6 +141,11 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
         check_file(template_file)
     }
 
+    /// Builds and constructs an X3D geospatial model instance
+    /// 
+    /// This function creates a new `X3DGeospatial` model instance by combining
+    /// the specified model type, size, settings, and model components. It's the
+    /// primary entry point for constructing geospatial models from elevation data.
     fn build_model(
         model_type:         ModelType,
         model_size:         GeoPointIndex,
@@ -281,8 +286,56 @@ impl<'a> Model<'a> for X3DGeospatial<'a> {
 
 }
 
-
 #[cfg(test)]
 mod tests {
-    // Test cases would go here
+    use super::*;
+
+    #[test]
+    fn test_make_valid_model_size() {
+        // Test with None (should return minimum valid size)
+        let result = X3DGeospatial::make_valid_model_size(None);
+        assert_eq!(result, MIN_VALID_MODEL_SIZE);
+        
+        // Test with size below minimum (should return minimum)
+        let result = X3DGeospatial::make_valid_model_size(Some(2));
+        assert_eq!(result, MIN_VALID_MODEL_SIZE);
+        
+        // Test with size at minimum (should return minimum)
+        let result = X3DGeospatial::make_valid_model_size(Some(MIN_VALID_MODEL_SIZE));
+        assert_eq!(result, MIN_VALID_MODEL_SIZE);
+        
+        // Test with size above minimum (should return the size)
+        let result = X3DGeospatial::make_valid_model_size(Some(10));
+        assert_eq!(result, 10);
+    }
+
+    #[test]
+    fn test_define_spacing() {
+        // Test spacing calculation with different model sizes
+        let spacing = X3DGeospatial::define_spacing(10);
+        assert_eq!(spacing, 18.0); // 180.0 / 10
+        
+        let spacing = X3DGeospatial::define_spacing(5);
+        assert_eq!(spacing, 36.0); // 180.0 / 5
+        
+        let spacing = X3DGeospatial::define_spacing(100);
+        assert_eq!(spacing, 1.8); // 180.0 / 100
+    }
+
+    #[test]
+    fn test_create_modeldata() {
+        // Test creating model points with size 2
+        let spacing = X3DGeospatial::define_spacing(2);
+        let ModelData(vertices, _, _) = 
+                X3DGeospatial::create_modeldata(2, spacing);
+        
+        // Should have vertices in the model data
+        assert!(vertices.len() > 2);
+        
+        // The actual implementation creates a grid with:
+        // - model_size+1 rows (0..=model_size)
+        // - 2*(model_size+1) columns (0..=2*model_size)
+        // For model_size=2, that's 3 rows and 5 columns = 15 vertices
+        assert_eq!(vertices.len(), 15);
+    }
 }

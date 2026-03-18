@@ -116,7 +116,7 @@ impl<'a> Model<'a> for Obj<'a> {
     /// 
     /// Generates a grid of geographic points covering the entire globe.
     /// The points are arranged in a specific pattern to create the 3D surface.
-    fn create_modelpoints(model_size: GeoPointIndex, j_spacing: Coord) -> ModelData {
+    fn create_modeldata(model_size: GeoPointIndex, j_spacing: Coord) -> ModelData {
         let gnn = model_size/2 as GeoPointIndex;
         let mut vertices: Vertices = BTreeMap::new();
         let mut texture_points: PointsMapping = HashMap::new();
@@ -308,6 +308,11 @@ impl<'a> Model<'a> for Obj<'a> {
         check_file(template_file_mtl)
     }
 
+    /// Builds and constructs an OBJ model instance
+    /// 
+    /// This function creates a new `Obj` model instance by combining
+    /// the specified model type, size, settings, and model components. It's the
+    /// primary entry point for constructing geospatial models from elevation data.
     fn build_model(
         model_type:         ModelType,
         model_size:         GeoPointIndex,
@@ -565,7 +570,7 @@ mod tests {
         let model_size = Obj::make_valid_model_size(Some(3));
         let j_spacing = Obj::define_spacing(model_size);
         let ModelData (vertices, elms, texture_mapping) =
-                Obj::create_modelpoints(model_size, j_spacing);
+                Obj::create_modeldata(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
         // println!("{:?}", vertices);
         // println!("{:?}", pmap);
@@ -585,7 +590,7 @@ mod tests {
         let model_size = Obj::make_valid_model_size(Some(4));
         let j_spacing = Obj::define_spacing(model_size);
         let ModelData (vertices, elms, texture_mapping) =
-                Obj::create_modelpoints(model_size, j_spacing);
+                Obj::create_modeldata(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
         // println!("{:?}", vertices);
         // println!("{:?}", pmap);
@@ -609,7 +614,7 @@ mod tests {
         let model_size = Obj::make_valid_model_size(Some(8));
         let j_spacing = Obj::define_spacing(model_size);
         let ModelData (vertices, elms, texture_mapping) =
-                Obj::create_modelpoints(model_size, j_spacing);
+                Obj::create_modeldata(model_size, j_spacing);
         let pmap = texture_mapping.unwrap();
         // println!("{:?}", vertices);
         // println!("{:?}", pmap);

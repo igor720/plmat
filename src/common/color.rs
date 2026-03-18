@@ -162,6 +162,42 @@ fn build_color_table(file_content: ColorProfileFileContent) -> Result<Vec<ColorR
     }
 }
 
+/// Build color mapping from color table
+/// 
+/// Creates a mapping from elevation values to RGB colors by interpolating
+/// between color records in the table. For heights between records, linear
+/// interpolation is used to determine the color.
+fn make_mapping(color_table: &Vec<ColorRecord>) -> Result<HashMap<HeightInt, RGB>, ErrBox> {
+    let mut mapping = HashMap::new();
+
+    // Handle the last record (highest elevation)
+    let ColorRecord (hl, rl, gl, bl) = &color_table.last()
+        .ok_or_else(|| -> ErrBox { "Color table is empty".into() })?;
+    mapping.insert(*hl, RGB (*rl, *gl, *bl));    // biggest height
+
+    let mut color_table_copy = color_table.clone();
+    color_table_copy.remove(0);
+
+    let color_table_bounds = color_table.into_iter().zip(color_table_copy);
+
+    for (
+        ColorRecord (h0, r0, g0, b0),
+        ColorRecord (h1, r1, g1, b1)
+    ) in color_table_bounds {
+        for h in *h0..h1 {
+            let delta_h = (h-h0) as ColorComponent;
+            let span_h = (h1-h0) as ColorComponent;
+            mapping.insert(h, RGB (
+                r0 + (r1-r0)*delta_h/span_h,
+                g0 + (g1-g0)*delta_h/span_h,
+                b0 + (b1-b0)*delta_h/span_h,
+            ));
+        }
+    }
+
+    return Ok(mapping);
+}
+
 /// Struct of in-memory mapping of elevations to colors
 pub struct ColorMapping {
     mapping: HashMap<HeightInt, RGB>,
@@ -170,42 +206,6 @@ pub struct ColorMapping {
 }
 
 impl ColorMapping {
-    /// Build color mapping from color table
-    /// 
-    /// Creates a mapping from elevation values to RGB colors by interpolating
-    /// between color records in the table. For heights between records, linear
-    /// interpolation is used to determine the color.
-    fn make_mapping(color_table: &Vec<ColorRecord>) -> Result<HashMap<HeightInt, RGB>, ErrBox> {
-        let mut mapping = HashMap::new();
-
-        // Handle the last record (highest elevation)
-        let ColorRecord (hl, rl, gl, bl) = &color_table.last()
-            .ok_or_else(|| -> ErrBox { "Color table is empty".into() })?;
-        mapping.insert(*hl, RGB (*rl, *gl, *bl));    // biggest height
-
-        let mut color_table_copy = color_table.clone();
-        color_table_copy.remove(0);
-
-        let color_table_bounds = color_table.into_iter().zip(color_table_copy);
-
-        for (
-            ColorRecord (h0, r0, g0, b0),
-            ColorRecord (h1, r1, g1, b1)
-        ) in color_table_bounds {
-            for h in *h0..h1 {
-                let delta_h = (h-h0) as ColorComponent;
-                let span_h = (h1-h0) as ColorComponent;
-                mapping.insert(h, RGB (
-                    r0 + (r1-r0)*delta_h/span_h,
-                    g0 + (g1-g0)*delta_h/span_h,
-                    b0 + (b1-b0)*delta_h/span_h,
-                ));
-            }
-        }
-
-        return Ok(mapping);
-    }
-
     /// Get color mapping function from color profile file
     /// 
     /// Creates a closure that maps elevation values to RGB colors by reading
@@ -214,7 +214,7 @@ impl ColorMapping {
         let file_content = read_lines(&filepath)?;
         let color_table = build_color_table(file_content)?;
 
-        let mapping = Self::make_mapping(&color_table)?;
+        let mapping = make_mapping(&color_table)?;
         let first_color_record = color_table.first()
                 .ok_or_else(|| -> ErrBox { "Can't get first element in color table".into() })?
                 .clone();
